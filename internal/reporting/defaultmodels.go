@@ -115,6 +115,10 @@ func SessionBinding(root, sessionID string) (string, error) {
 	if rec.bad != nil {
 		return "", rec.bad.err
 	}
+	if rec.Binding == "" && rec.Link != nil && rec.Link.ResumeMythos != "" {
+		// A resume that ended before it reached its recorded login still belongs there (DESIGN A120).
+		return "mythos/" + rec.Link.ResumeMythos, nil
+	}
 	return rec.binding(), nil
 }
 

@@ -19,12 +19,14 @@ import (
 
 // startStarted records the family startFamilyEnv names for the hook's
 // session, so the policy knows a Mythos session before its first status line
-// (DESIGN A106). It then releases the start hold startHoldEnv names, if it is
-// still there, and, once no other session is starting, runs one tick of both
-// stores as `auto --once` does: also when the hold had ended, since a session
-// that took longer than the bound to come up still needs the login moved. It
-// prints nothing, since a SessionStart hook's stdout goes into the session,
-// and its problems go to the log; the caller exits 0 whatever happens.
+// (DESIGN A106). In a linked session it binds the link and places a resume or
+// a session on a Mythos login as its status line would (A109, A120). It then
+// releases the start hold startHoldEnv names, if it is still there, and, once
+// no other session is starting, runs one tick of both stores as `auto --once`
+// does: also when the hold had ended, since a session that took longer than
+// the bound to come up still needs the login moved. It prints nothing, since a
+// SessionStart hook's stdout goes into the session, and its problems go to the
+// log; the caller exits 0 whatever happens.
 func startStarted(in io.Reader) {
 	token, family := os.Getenv(startHoldEnv), os.Getenv(startFamilyEnv)
 	if token == "" && family == "" && mythosSessionDir == "" && sessionLinkPath == "" {
@@ -49,8 +51,10 @@ func startStarted(in io.Reader) {
 			root := paths.GetBackupRoot()
 			if err := reporting.BindSessionLink(root, session, sessionLinkPath, family, scope, time.Now()); err != nil {
 				logging.New(root, false).Warningf("start --started: %v", err)
-			} else if source == "resume" && observedModel != "" {
+			} else if observedModel != "" && (source == "resume" || mythosSessionDir != "") {
 				// A picker or --continue first identifies the session in this hook.
+				// A Mythos session moves on from here, also one that draws no
+				// status line: its client has read its login's settings (DESIGN A120).
 				defer checkLinkedSession(session, observedModel, "hook")
 			}
 		}

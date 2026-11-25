@@ -48,7 +48,7 @@ tycswap start --allow ID | --disallow ID | --list
 tycswap fable --allow ID | --disallow ID | --list [--json]
                                             mark the accounts that run Fable
 tycswap fable --login                       sign in for Fable each account without a Fable login
-tycswap start --started                     end a session's start hold (a SessionStart hook)
+tycswap start --started                     bind a session's link, end its start hold (a SessionStart hook)
 tycswap start --check                       place a linked session or check a direct session’s login
 tycswap use <mythos|fable|default> [--session ID]  move a linked session to the selected login
 tycswap mythos --allow ID | --disallow ID | --list
@@ -1576,6 +1576,23 @@ tycswap start --check
 `--account ID` to choose a specific independent login. **Start Mythos session…**
 in the terminal menu offers the ready accounts.
 
+On Linux and WSL a linked Mythos start, fresh or a resume (`--resume`, the
+picker, `--continue`, `--fork-session`, `--from-pr`), begins on a start
+login: while auto-switch is on and the login it would get (the ranked choice
+with room, for a resume its recorded login) is no start login, it takes the
+best start login with room (`Starting on start login Account-N.`), else,
+while another ready Mythos login has room and asks no allocation question,
+one at its limit, the selected login if it is one (`Starting on start login
+Account-N, which is at its limit; auto-switch moves the session to a Mythos
+login with room once it is up.`). A resume whose recorded login has room does so with auto-switch off
+too. `--account` of a start login at its limit starts there while another
+login has room, with auto-switch off too (`…, which is at its limit.`). A
+start login allocated away from Mythos is not taken; a resume recorded on a
+start login starts there. The session's SessionStart hook moves it on, also
+in print mode: a resume to its recorded login while that has room, else to
+the selected login with room. Nothing moves it before that hook
+(DESIGN A120).
+
 `start --next mythos` requests Mythos for the next bare native Claude start on
 this box on Linux, WSL or Windows. On macOS the control reports that independent
 starts are unavailable. An explicit model, resume, or command with arguments leaves the request
@@ -1638,8 +1655,9 @@ Marks are managed independently of these launch-only overrides.
 
 Without an override, an explicit UUID resume of a session recorded on an
 independently enrolled login uses that same identity, including after a
-native model change. If the recorded login is disabled or removed, the
-resume stops. A one-time allocation question names the model being resumed
+native model change; on Linux and WSL a Mythos resume may begin on a start
+login and return to it at its SessionStart hook (A120). If the recorded
+login is disabled or removed, the resume stops. A one-time allocation question names the model being resumed
 or explicitly requested. Other starts pick the credential store by model
 family. The settings it reads are, in this order, the `--settings`
 value (`--settings X` or `--settings=X`, the last one: JSON when it starts
@@ -1778,9 +1796,12 @@ settings as a SessionStart hook:
 {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "tycswap start --started", "timeout": 45}]}]}}
 ```
 
-Without `TYCSWAP_START_HOLD` and `TYCSWAP_START_FAMILY` it exits at once and
-opens nothing; with the family only, it records it and does nothing else
-([tycswap mythos](#tycswap-mythos)). It reads the
+Without `TYCSWAP_START_HOLD`, `TYCSWAP_START_FAMILY` and a session link it
+exits at once and opens nothing; with the family only, it records it and does
+nothing else ([tycswap mythos](#tycswap-mythos)). In a linked session it binds
+the link to the session and, when the hook names the model, places a resume or
+a session on a Mythos login as its status line would: a Mythos session leaves
+its start login here, in print mode too (DESIGN A120). It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under each state file's lock, the
@@ -1915,7 +1936,8 @@ quota and ownership checks still apply.
 Managed native starts on Linux and WSL receive
 `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/links/<token>`.
 `start --started` binds the link to the session UUID, process and selected
-store. A resume gets a fresh link. The scheduled tick removes links for
+store, and places a resume or a session on a Mythos login as the status line
+would (DESIGN A120). A resume gets a fresh link. The scheduled tick removes links for
 ended processes and moves eligible Mythos sessions when another ready
 Mythos login has room. After a real Fable store tick it also gives each
 linked Fable session without a held `use` choice the placement the status

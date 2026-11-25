@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.24.1
+
+- **Fixed:** A Mythos start on Linux and WSL, fresh or a resume, begins on a start login again, even one at its limit while another Mythos login has room, and its SessionStart hook moves it on: a resume to its recorded login while that has room, else to the selected Mythos login with room. Since 0.20.0 it linked straight to the selected login, or for a resume to its recorded one, whose organization's managed settings can leave out Mythos, so the session came up as Opus. A print-mode session, which draws no status line, now leaves the start login too. The start says `Starting on start login Account-N, which is at its limit; auto-switch moves the session to a Mythos login with room once it is up.`; `--account` of a start login at its limit, and with start logins marked a resume whose recorded login is at its limit, are no longer refused while another login has room.
+
 ## v0.24.0
 
 - Releases publish themselves: a merge to main whose `CHANGELOG.md` names a new version (`## vX.Y.Z`) is tagged on its merge commit once CI passed there, and published with that section as its notes. A release appears with its Linux and Windows binaries and `SHA256SUMS`; the macOS binaries follow when a Mac runner has built them, and `SHA256SUMS` then lists them too, every earlier line unchanged. A pull request's check (`make release-check` locally) refuses a version that is not greater than every tag, repeats one, has no entries, is not `vMAJOR.MINOR.PATCH` or comes with a second new version, and any change to a section main already has. The entries written before this release keep their words under `## v0.23.3 and earlier`.
