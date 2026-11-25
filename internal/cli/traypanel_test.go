@@ -574,7 +574,7 @@ func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
 	if text, alert := note(); text != "Claude Code updated. Restart running Claude Code sessions to use the new version." || alert {
 		t.Fatalf("Claude Code update: %q %v", text, alert)
 	}
-	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Could not open the dashboard | ") || !strings.Contains(notes, "Update failed | offline") {
+	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Could not open the dashboard | No browser") || !strings.Contains(notes, "Update failed | offline") {
 		t.Fatalf("notifications %q", notes)
 	}
 }

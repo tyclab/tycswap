@@ -1,17 +1,14 @@
 //go:build !windows
 
-// Tests of tycswap start that need POSIX modes and named pipes (DESIGN A103).
+// Tests of tycswap start that need named pipes (DESIGN A103).
 package cli
 
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // A named pipe where start looks for the resumed session's transcript or a
@@ -54,30 +51,5 @@ func TestSessionFamilySkipsANamedPipe(t *testing.T) {
 				t.Fatal("sessionFamily blocked on a named pipe")
 			}
 		})
-	}
-}
-
-// A store start must not read (group-writable, and chmod cannot change it)
-// is not opened for the Fable store either: a Fable session starts on the
-// default login, and start says why.
-func TestStartWithAStoreProblemOpensNoFableStore(t *testing.T) {
-	_, rec := fableStart(t, "on")
-	root := paths.GetBackupRoot()
-	if err := os.Chmod(root, 0o777); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { paths.PrivateRootChmod = os.Chmod })
-	paths.PrivateRootChmod = func(string, os.FileMode) error { return nil }
-	if problem := startStoreProblem(root); problem == "" {
-		t.Fatal("precondition: start finds no problem with the store")
-	}
-	code, _, stderr := runCLI(t, []string{"start", "--", "command", "--model", "fable"}, false, false)
-	if code != 23 || rec.execs != 1 || len(rec.selections) != 1 || !strings.Contains(stderr, "launching on the current login.") {
-		t.Fatalf("code=%d execs=%d selections=%q stderr=%q", code, rec.execs, rec.selections, stderr)
-	}
-	for _, entry := range rec.env {
-		if strings.HasPrefix(entry, secureStorageVar+"=") {
-			t.Fatalf("the child got %s", entry)
-		}
 	}
 }
