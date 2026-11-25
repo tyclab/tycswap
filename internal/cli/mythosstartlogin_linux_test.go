@@ -1,5 +1,5 @@
 // Tests that a Mythos start, fresh or a resume, begins on a start login and
-// leaves it from its SessionStart hook on (DESIGN A119).
+// leaves it from its SessionStart hook on (DESIGN A120).
 package cli
 
 import (

@@ -9,8 +9,9 @@ on:
 permissions:
   contents: read
 
+# Each push to main keeps its own run: its release waits for it (DESIGN A119).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -18,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
@@ -42,6 +46,8 @@ jobs:
           done
           exit 1
       # The Makefile targets, so CI and a developer's machine run the same commands.
+      - name: Release version check against the base (DESIGN A119)
+        run: make release-check RELEASE_BASE=HEAD^1
       - run: make fmt
       - run: make vet
       - run: make test
@@ -51,10 +57,9 @@ jobs:
       - run: GOOS=windows go vet ./...
       - run: GOOS=darwin CGO_ENABLED=0 go vet ./...
 
-  # The Windows tray, the detached start and the console hand-off run for
-  # real here; their tests are build-tagged (DESIGN A41). The whole
-  # suite runs: every test keeps its home in a temporary directory
-  # (testutil.IsolateHome sets USERPROFILE, which os.UserHomeDir reads here).
+  # The Windows tray, the detached start and the console hand-off run for real
+  # here; their tests are build-tagged (DESIGN A41). The whole suite runs: each
+  # test's home is a temporary directory (testutil.IsolateHome sets USERPROFILE).
   windows:
     runs-on: windows-latest
     steps:

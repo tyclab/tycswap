@@ -2,10 +2,12 @@ MODULE  := github.com/tyclab/tycswap
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo v0.0.0-dev)
 LDFLAGS := -X $(MODULE)/internal/version.Version=$(VERSION)
 
-.PHONY: help build install test race vet fmt lint vuln clean
+RELEASE_BASE ?= origin/main
+
+.PHONY: help build install test race vet fmt lint vuln release-check clean
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 build: ## Build ./tycswap with embedded version
 	go build -ldflags "$(LDFLAGS)" -o tycswap ./cmd/tycswap
@@ -27,6 +29,9 @@ fmt: ## gofmt all source (fails if anything was unformatted)
 
 vuln: ## Scan for known vulnerabilities (govulncheck, fetched by go run)
 	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+release-check: ## Check CHANGELOG.md's version against the v* tags and RELEASE_BASE (git fetch origin --tags first)
+	go run ./internal/release/releasectl check --base $(RELEASE_BASE)
 
 clean: ## Remove built binary
 	rm -f tycswap

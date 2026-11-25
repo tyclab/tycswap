@@ -10247,7 +10247,210 @@ They wait on what a goroutine is doing, read from the goroutine dump
 (`testutil.Parked`), never on a duration. The reproduction took 60.4 s
 before and 0.08 to 0.11 s after, on a box at a load of about 100.
 
-## A119. A Mythos start begins on a start login and leaves it at its SessionStart hook
+## A119. A merge that names a version releases itself
+
+**Why.** Every release was cut by hand: an annotated tag on the merge commit
+once CI passed there, notes written into the draft the Release workflow left,
+`gh release edit --draft=false`. Four releases on 2026-11-25 (v0.23.0 to
+v0.23.3) took that by hand, each one pull request, while macOS runners were
+short all day: macOS jobs were cancelled with zero steps after about 15
+minutes queued (`The job was not acquired by Runner of type hosted even after
+multiple attempts`), an agent reran each with `gh run rerun --failed`, the
+Release run's `publish` was skipped because `darwin` was, and the release was
+put together by hand from the `linux-windows` artifact with macOS attached
+hours later. The operator ruled that a release does not wait for macOS.
+
+**The pull request decides.** `CHANGELOG.md` has `## Unreleased` (first, may
+be empty), `## vMAJOR.MINOR.PATCH` sections, newest first, and
+`## v0.23.3 and earlier` last: the entries written under the old single
+`## Unreleased`, every one released by v0.23.3, with their words unchanged and
+not split into versions they never had. A pull request that is to be released
+renames `## Unreleased` to its version; the reviewer sees the version and the
+notes in the diff. `release.CheckVersion(head, base, tags)` is the one rule:
+it returns the version head names that base does not and refuses a level-two
+heading that is none of the three kinds (a `## v0.24`, `## 0.24.0`, a
+pre-release or a date after the version), a heading twice, versions out of
+order, two new versions, a new one that is empty, one that equals a tag, one
+not greater than every tag and every version base names, and any change to or
+removal of a section base has besides `## Unreleased`. A heading inside a
+fenced block is text. `make release-check` runs it locally against
+`origin/main` and the working tree's file; CI's `test` job (required) runs it
+with `RELEASE_BASE=HEAD^1`, the base side of the pull request's merge ref and
+the previous main on a merge commit, after a full fetch for the tags.
+
+**Two claims of one version.** The ruleset wants an up-to-date branch, so the
+second pull request merges main first. Its check then meets the first one's
+section on the base: git either conflicts, or merges the two headings into one
+section (`changes ## v0.24.0, which the base already has`) or two (`names
+## v0.24.0 twice`). `TestTheSecondClaimOfAVersionFailsBeforeItsMerge`.
+
+**The merge releases.** `.github/workflows/release.yml` starts on
+`workflow_run` when CI completes on main (only this repository's pushes: the
+event reports pull request runs, forks' too). `decide` (contents and actions
+read) runs `release.VersionAt` on the merge commit: `CheckVersion` of its
+CHANGELOG.md against its first parent's, counting the tags merged into that
+parent, so a later merge released first does not make this one late (it is
+then not marked latest). No new version: nothing happens. Otherwise
+`release.GateCI` reads the jobs of the CI attempt that completed
+(`/attempts/<n>/jobs`, which a rerun started meanwhile does not change):
+`test` and `windows` passed and `macos` passed or found no runner tag it,
+unless the last earlier attempt in which `macos` ran ended otherwise (a
+rerun that found no runner does not wash out a failure); a required job that
+found no runner waits for its rerun, whose completion decides again; anything
+else fails the run, naming the job. `tag` (contents
+write) annotates the merge commit `tycswap vX.Y.Z` as `github-actions[bot]`
+and pushes it; a tag already on that commit is success, one elsewhere an
+error. The builds check out the tag. `publish` attaches the Linux and Windows
+builds and `SHA256SUMS`, writes the notes into the draft and then publishes,
+with `make_latest` false when a greater version is published already;
+`attach-darwin` attaches macOS whenever it is built and never publishes. The
+Linux/Windows chain and the macOS chain need nothing of each other, so each
+reruns alone.
+
+**The token's limit, and why one workflow.** A tag pushed with the workflow's
+`GITHUB_TOKEN` starts no `push` workflow, so the run that tags also builds
+and publishes. The update check reads `releases/latest` (A86); a release
+becomes visible only through `publish`, after its Linux and Windows builds,
+their lines and its notes are on the draft (`TestPublishThenAttachDarwin`
+records the release as it was at that moment).
+
+**SHA256SUMS.** `release.Publisher` never replaces a build: a name the release
+holds is kept, whatever the rebuilt bytes, and an upload GitHub did not finish
+(state not `uploaded`) is deleted and uploaded again. `SHA256SUMS` is computed
+from the bytes attached (downloaded unless this run uploaded them), deleted and
+uploaded again whenever it differs, and read back until a pass finds it equal
+to the release's builds: a run that attaches meanwhile only adds lines. A line
+that disagrees with its build stops the run, since a published hash never
+changes; the Windows line is the same bytes before and after macOS arrives.
+For the second between the delete and the upload a release has no
+`SHA256SUMS`: clients offer nothing then, and `tycswap upgrade` refuses as it
+did for an unreadable file.
+
+**Clients wait for their build.** A release binary downloads its upgrade
+(A36), so `update.Checker` takes a newer tag as the latest only once that
+release's `SHA256SUMS` lists `AssetName(tag, platform, arch)`; until then
+`Latest` returns `*update.BuildPendingError` (the card and the tray say the
+build is not published yet), the passive notice prints nothing (its 24-hour
+negative cache as for any failure), and `tycswap upgrade` prints `tycswap
+<current> is the latest version for this machine: tycswap <tag> is released,
+but its build for this machine (<asset>) is not published yet. Try again
+later.` and exits 0. Before, a macOS release binary was told about the release
+and `upgrade` failed with `SHA256SUMS has no line for <asset>` (exit 1). A
+build from source (module, checkout) is told the tag alone and never asks for
+`SHA256SUMS`.
+
+**A runner shortage.** `release.Job.FoundNoRunner`: cancelled with no step
+started (the recorded macOS job of run 45598548351 attempt 1 had no steps and
+runner 0; one cancelled while running, run 45612794530, had run its first
+steps). `.github/workflows/retry.yml` starts on `workflow_run` for CI and
+Release; `release.DecideRetry` reruns the run's failed jobs only when every
+job that did not succeed found no runner (a skipped dependant aside), the
+completed attempt is the run's latest, and, for a pull request, the run is the
+newest of its workflow on that branch: a newer push cancels the older run's
+queued jobs with the same signature (run 44173229395). A job that ran and
+failed leaves the run to a person, whose rerun of the failed jobs includes the
+cancelled ones. `rerun-failed-jobs` reruns cancelled jobs (run 45598548351's
+attempts 2 and 3 reran only macOS) and their dependants. Each rerun's
+completion starts Retry again, until the job runs; GitHub reruns a run at most
+50 times, within 30 days, and then refuses: the Retry run fails, saying a
+person starts a new run. CI's concurrency group is now per commit on main
+(per ref for pull requests, which still cancel), since a shared group cancels
+a waiting main run when the next merge lands and that merge's version would
+never be decided.
+
+**Rerunning a release.** A fresh Release run for a merge commit that is
+already tagged (a later CI attempt completing) does nothing; the run that
+tagged it finishes it, rerun by Retry when a job found no runner. A rerun
+(attempt > 1, **Re-run all jobs**) plans the builds the published release
+lacks and changes nothing else: no second tag, no second upload, the notes of
+a published release untouched (`TestRerunOfAFinishedReleaseChangesNothing`).
+Two runs creating the release at once keep the older and delete the other's
+draft.
+
+**By hand.** A pushed `v*` tag runs as before and leaves a draft, with the tag
+commit's section as its notes when it has one. `workflow_dispatch` with a tag
+builds what its release lacks and publishes when the tag's commit has the
+section: the way out past the rerun bound, and for a release cut out of band.
+
+**Credentials.** Everything runs on `GITHUB_TOKEN`; `permissions: {}` at the
+top and per job: `decide` contents and actions read, `tag`, `publish` and
+`attach-darwin` contents write, the builds contents read, `retry` actions
+write and contents read. Release and Retry decide in `internal/release`,
+called as `go run ./internal/release/releasectl` from the default branch:
+Retry never runs the code of the run it looks at, and a tag on a commit older
+than this change still finds the tool. The builds alone check out the tag.
+
+**GitHub's documented behaviour relied on.** Triggering a workflow:
+"events triggered by the `GITHUB_TOKEN` will not create a new workflow run",
+except `workflow_dispatch` and `repository_dispatch`. Events that trigger
+workflows, `workflow_run`: it triggers "regardless of the conclusion of the
+previous workflow", "only … if the workflow file exists on the default
+branch", "You can't use `workflow_run` to chain together more than three
+levels of workflows" (CI, Release, Retry is three), "The `requested` activity
+type does not occur when a workflow is re-run" (`completed` does), and
+GITHUB_SHA is the "Last commit on default branch". Re-running workflows and
+jobs: "up to 30 days after its initial run", "A workflow run can be re-run a
+maximum of 50 times", "Jobs that aren't included keep their outputs from the
+previous attempt", "GitHub also re-runs the jobs that depend on them", re-runs
+"use the same `GITHUB_SHA`". Concurrency: "any existing `pending` job or
+workflow in the same concurrency group will be canceled". Releases: "Get a
+published release with the specified tag"; "Only users with push access will
+receive listings for draft releases"; `make_latest`, "Drafts and prereleases
+cannot be set as latest". Release assets: a second upload of a name gets 422,
+"you … must delete the old file before you can re-upload". Not documented and
+taken from observation: a rerun started with `GITHUB_TOKEN` (triggering actor
+`github-actions[bot]`) fires `workflow_run` on completion (a public
+repository's release run 34162442065, attempts 2 and 3, each followed two
+seconds later by its retry workflow's run).
+
+**Rejected.** A release on every merge with a guessed bump; a bot commit that
+moves entries into a version; a schedule that polls; a fixed retry count or
+sleep. A separate tag-push workflow fed by a GitHub App or personal token (no
+such credential exists, and none is needed). A reusable workflow called by
+CI: its token can only keep or lose permissions ("permissions can only be
+maintained or reduced"), so CI would need contents write on every pull
+request. Holding publication until macOS (`make_latest` false until it
+arrives): Linux and Windows would wait for macOS, against the ruling. A
+concurrency group per release: a third run would cancel the waiting second,
+with the no-runner signature. Recognising the shortage by its annotation text:
+`FoundNoRunner` is structural, and a superseded pull request run is told apart
+by the newer run. Rerunning the runner-less jobs of a run that also failed:
+the run waits for a person anyway, and the reruns would take scarce macOS
+runners.
+
+**Limits.** A person who cancels a run while a job still queues gets that job
+rerun: the signature cannot tell the cancel from the shortage; to stop a
+release before it is tagged, disable the Retry workflow first. Retry watches
+CI and Release, not itself. A release published while macOS is still building
+has macOS untested on the merge commit when CI's `macos` found no runner; the
+release's own macOS build smoke-tests the binaries, and CI's macOS rerun on
+that commit does not take a release back. A job of Release that GitHub
+cancelled for want of a runner is rerun alone with `rerun-failed-jobs`; when
+it is `publish` or `attach-darwin`, it downloads its build from the earlier
+attempt's artifact.
+
+**Tests.** In `release`: `TestParse*`, `TestTheRepositoryChangelogParses`,
+`TestCheckVersion` (each refusal above, nested lists, code spans and links,
+numeric order), `TestTheSecondClaimOfAVersionFailsBeforeItsMerge`,
+`TestCheckCountsEveryProblem`; `TestFoundNoRunnerOnRecordedJobs`,
+`TestGateCI`, `TestGateCIAttempts` and `TestDecideRetry` on job listings
+recorded from runs 45598548351 (macOS without a runner; passed), 45577203103
+(macOS failed in `go test` after 11 minutes), 44173229395 (superseded) and
+45612794530 (cancelled while running); `TestDecide`,
+`TestVersionAtAndNotesAt`, `TestCreateTag` (git, a bare origin and two
+clones), `TestPublishThenAttachDarwin`,
+`TestRerunOfAFinishedReleaseChangesNothing`, `TestDarwinFirstLeavesADraft`,
+`TestARerunFinishesAHalfRelease`, `TestAHandTagWithoutNotesStaysADraft`,
+`TestPublishRefuses`, `TestTwoRunsCreatingTheReleaseKeepOne`,
+`TestLatestOnlyForTheGreatestVersion`, `TestPublishedMissing`, `TestRetry`,
+against an in-memory GitHub. In `update`:
+`TestUpdateCheckWaitsForThisMachinesBuild`, `TestUpdateCheckWithoutSums`,
+`TestUpdateCheckForASourceBuildIgnoresBinaries`,
+`TestDownloadUpgrade_MacOSBuildNotPublishedYet`. What only GitHub can show
+(the triggers, the token's push, a rerun's completion event) is checked on the
+first release.
+
+## A120. A Mythos start begins on a start login and leaves it at its SessionStart hook
 
 **Why.** The operator on 2026-11-25 asked that a Mythos session start on
 his start login's account and then use another organization's quota ("this

@@ -248,7 +248,12 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	if b, err := url.Parse(base); err != nil || b.Scheme != "https" || b.Host == "" {
 		return manual("The release downloads at %s are not https; refusing.", base)
 	}
-	want, err := u.checksum(ctx, client, base+"SHA256SUMS", asset)
+	want, err := checksum(ctx, client, base+"SHA256SUMS", tag, asset)
+	var pending *BuildPendingError
+	if errors.As(err, &pending) {
+		fmt.Fprintf(u.stdout(), "tycswap %s is the latest version for this machine: %v. Try again later.\n", orUnknown(current), pending)
+		return 0
+	}
 	if err != nil {
 		return manual("Release %s: %v; refusing to install an unverifiable build.", tag, err)
 	}
@@ -283,12 +288,15 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	if err := replaceBinary(exePath, tmpPath, plat == platform.Windows); err != nil {
 		return manual("Could not replace %s: %v", exePath, err)
 	}
-	from := strings.TrimPrefix(current, "v")
-	if from == "" {
-		from = "unknown"
-	}
-	fmt.Fprintf(u.stdout(), "Updated tycswap %s → %s (%s).\n", from, strings.TrimPrefix(tag, "v"), exePath)
+	fmt.Fprintf(u.stdout(), "Updated tycswap %s → %s (%s).\n", orUnknown(current), strings.TrimPrefix(tag, "v"), exePath)
 	return 0
+}
+
+func orUnknown(version string) string {
+	if v := strings.TrimPrefix(version, "v"); v != "" {
+		return v
+	}
+	return "unknown"
 }
 
 // maxAssetBytes: the binary is about 10 MB; 256 MiB still refuses an endless stream before it fills the disk.
@@ -297,11 +305,21 @@ var maxAssetBytes int64 = 256 << 20
 // maxSumsBytes bounds the SHA256SUMS file.
 const maxSumsBytes = 1 << 20
 
+// BuildPendingError: the release's SHA256SUMS has no line for this machine's
+// build, which the release workflow attaches before its line and macOS after
+// Linux and Windows (DESIGN A119): it is not offered as an upgrade meanwhile.
+type BuildPendingError struct{ Tag, Asset string }
+
+func (e *BuildPendingError) Error() string {
+	return fmt.Sprintf("tycswap %s is released, but its build for this machine (%s) is not published yet",
+		strings.TrimPrefix(e.Tag, "v"), e.Asset)
+}
+
 // checksum reads the release's SHA256SUMS and returns the hash on the one
 // line that names asset ("<64 hex>  <name>", or " *<name>" for binary mode).
-// No line, two lines, or a malformed hash is an error: the build cannot be
-// verified.
-func (u Upgrader) checksum(ctx context.Context, client *http.Client, sumsURL, asset string) (string, error) {
+// No line is a *BuildPendingError; two lines or a malformed hash mean the
+// build cannot be verified.
+func checksum(ctx context.Context, client *http.Client, sumsURL, tag, asset string) (string, error) {
 	var buf bytes.Buffer
 	if err := download(ctx, client, sumsURL, &buf, maxSumsBytes); err != nil {
 		return "", fmt.Errorf("SHA256SUMS could not be read (%v)", err)
@@ -317,7 +335,7 @@ func (u Upgrader) checksum(ctx context.Context, client *http.Client, sumsURL, as
 	}
 	switch {
 	case len(found) == 0:
-		return "", fmt.Errorf("SHA256SUMS has no line for %s", asset)
+		return "", &BuildPendingError{Tag: tag, Asset: asset}
 	case len(found) > 1:
 		return "", fmt.Errorf("SHA256SUMS has %d lines for %s", len(found), asset)
 	}

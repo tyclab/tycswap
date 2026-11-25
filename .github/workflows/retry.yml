@@ -1,0 +1,34 @@
+# Reruns the jobs of a CI or Release run that found no runner (cancelled
+# before any step: GitHub's runner shortage, DESIGN A119); never a job that
+# ran and failed, a pull request run a newer push replaced, or an attempt
+# already rerun. Each rerun's completion comes back here until the job has
+# run or GitHub refuses (at most 50 reruns per run, within 30 days).
+name: Retry
+
+on:
+  workflow_run:
+    workflows: [CI, Release]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  retry:
+    if: github.event.workflow_run.conclusion != 'success' && github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      # The default branch's code, never the code of the run it looks at.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: go run ./internal/release/releasectl retry --run "$RUN" --attempt "$ATTEMPT"

@@ -157,8 +157,9 @@ func TestDownloadUpgrade_ReplacesBinaryAfterVerifying(t *testing.T) {
 	}
 }
 
-// What SHA256SUMS says decides: a mismatch, no line, two lines, a malformed
-// hash or no file at all leave the binary as it is.
+// What SHA256SUMS says decides: a mismatch, two lines, a malformed hash or
+// no file at all leave the binary as it is (no line: a build not attached
+// yet, TestDownloadUpgrade_MacOSBuildNotPublishedYet).
 func TestDownloadUpgrade_RefusesAnUnverifiedBuild(t *testing.T) {
 	const asset = "tycswap_v0.7.0_linux_amd64"
 	body := []byte("tampered")
@@ -169,7 +170,6 @@ func TestDownloadUpgrade_RefusesAnUnverifiedBuild(t *testing.T) {
 		want string
 	}{
 		{"checksum mismatch", []byte(strings.Repeat("0", 64) + "  " + asset + "\n"), "Checksum mismatch"},
-		{"no line for the asset", []byte(strings.Repeat("0", 64) + "  tycswap_v0.7.0_darwin_arm64\n"), "SHA256SUMS has no line for " + asset},
 		{"two lines", append(append([]byte{}, good...), good...), "SHA256SUMS has 2 lines for " + asset},
 		{"malformed hash", []byte("abc  " + asset + "\n"), "malformed hash"},
 		{"no SHA256SUMS", nil, "SHA256SUMS could not be read"},
@@ -236,16 +236,33 @@ func TestDownloadUpgrade_UnknownVersionAlwaysInstalls(t *testing.T) {
 	}
 }
 
-func TestDownloadUpgrade_NoAssetForPlatform(t *testing.T) {
-	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{"tycswap_v0.7.0_linux_amd64": []byte("x")}, nil)
+// A macOS release binary while the newest release has Linux and Windows but
+// no macOS build yet (DESIGN A119). Before, the upgrade failed: exit 1,
+// "SHA256SUMS has no line for tycswap_v0.7.0_darwin_amd64; refusing to
+// install an unverifiable build" and the releases page to download from by
+// hand. Now it says the build is not published yet, downloads nothing and
+// exits 0, as when it is current.
+func TestDownloadUpgrade_MacOSBuildNotPublishedYet(t *testing.T) {
+	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{
+		"tycswap_v0.7.0_linux_amd64":       []byte("x"),
+		"tycswap_v0.7.0_windows_amd64.exe": []byte("y"),
+	}, nil)
 	_, exe := installedBinary(t, "tycswap")
-	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
+	u, stdout, stderr := downloadUpgrader(rs, "v0.6.0")
 
-	if code := u.SelfUpgrade(exe, platform.MacOS); code != 1 {
-		t.Fatalf("exit %d, want 1", code)
+	if code := u.SelfUpgrade(exe, platform.MacOS); code != 0 {
+		t.Fatalf("exit %d; stderr=%q", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "SHA256SUMS has no line for tycswap_v0.7.0_darwin_amd64") || !strings.Contains(stderr.String(), rs.srv.URL) {
-		t.Errorf("stderr = %q", stderr.String())
+	want := "tycswap 0.6.0 is the latest version for this machine: tycswap 0.7.0 is released, but its build for this machine " +
+		"(tycswap_v0.7.0_darwin_amd64) is not published yet. Try again later.\n"
+	if stdout.String() != want || stderr.Len() != 0 {
+		t.Errorf("stdout = %q, stderr = %q", stdout.String(), stderr.String())
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "old build" {
+		t.Errorf("binary changed: %q", got)
+	}
+	if n := rs.hits.Load(); n != 2 {
+		t.Errorf("%d requests, want the release lookup and SHA256SUMS", n)
 	}
 }
 

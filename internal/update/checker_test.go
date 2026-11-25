@@ -7,12 +7,15 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -524,5 +527,98 @@ func TestLatest_OtherStatuses(t *testing.T) {
 		if _, err := c.Latest(context.Background()); err == nil || err.Error() != tc.want(latestURL(srv)) {
 			t.Errorf("HTTP %d: Latest error = %v, want %q", tc.status, err, tc.want(latestURL(srv)))
 		}
+	}
+}
+
+// releaseWithSums serves the latest redirect to tag and tag's SHA256SUMS as
+// sums says, "" for none; it counts the SHA256SUMS requests.
+func releaseWithSums(t *testing.T, tag string, sums *string) *atomic.Int32 {
+	t.Helper()
+	var asked atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case releasesPath + "/latest":
+			http.Redirect(w, r, releasesPath+"/tag/"+tag, http.StatusFound)
+		case releasesPath + "/download/" + tag + "/SHA256SUMS":
+			asked.Add(1)
+			if *sums == "" {
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = io.WriteString(w, *sums)
+		default:
+			t.Errorf("requested %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	withReleasesURL(t, srv.URL+releasesPath)
+	return &asked
+}
+
+func sumLine(name string) string { return strings.Repeat("ab", 32) + "  " + name + "\n" }
+
+// A macOS release binary while v0.7.0 is published with its Linux and
+// Windows builds and no macOS build yet (DESIGN A119). Before, the notice
+// said "A newer version of tycswap is available (0.7.0) … Run `tycswap
+// upgrade` to update." and the card and the tray offered an install that
+// then failed. Now nothing offers it until SHA256SUMS lists the macOS
+// build; Linux is offered at once.
+func TestUpdateCheckWaitsForThisMachinesBuild(t *testing.T) {
+	withRelease(t) // a release build of v0.6.0
+	sums := sumLine("tycswap_v0.7.0_linux_amd64") + sumLine("tycswap_v0.7.0_windows_amd64.exe")
+	asked := releaseWithSums(t, "v0.7.0", &sums)
+	mac := func() Checker {
+		return Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000), Platform: func() platform.Platform { return platform.MacOS }, Arch: "arm64"}
+	}
+
+	if msg := mac().CheckForUpdate("", "v0.6.0", platform.MacOS); msg != "" {
+		t.Errorf("macOS notice without its build: %q", msg)
+	}
+	_, err := mac().Latest(context.Background())
+	var pending *BuildPendingError
+	if !errors.As(err, &pending) || err.Error() != "tycswap 0.7.0 is released, but its build for this machine (tycswap_v0.7.0_darwin_arm64) is not published yet" {
+		t.Errorf("Latest on macOS: %v", err)
+	}
+	linux := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000), Arch: "amd64"}
+	if msg := linux.CheckForUpdate("", "v0.6.0", platform.Linux); !strings.Contains(msg, "(0.7.0)") {
+		t.Errorf("Linux notice: %q", msg)
+	}
+
+	sums += sumLine("tycswap_v0.7.0_darwin_arm64")
+	if tag, err := mac().Latest(context.Background()); err != nil || tag != "v0.7.0" {
+		t.Errorf("Latest once the macOS build is attached: %q, %v", tag, err)
+	}
+	if msg := mac().CheckForUpdate("", "v0.6.0", platform.MacOS); !strings.Contains(msg, "(0.7.0)") {
+		t.Errorf("macOS notice once its build is attached: %q", msg)
+	}
+	if asked.Load() != 5 {
+		t.Errorf("SHA256SUMS asked %d times, want once per check", asked.Load())
+	}
+}
+
+// SHA256SUMS is replaced, not edited, when the macOS builds arrive: for a
+// moment the release has none, and the check offers nothing.
+func TestUpdateCheckWithoutSums(t *testing.T) {
+	withRelease(t)
+	sums := ""
+	releaseWithSums(t, "v0.7.0", &sums)
+	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000), Arch: "amd64"}
+	if msg := c.CheckForUpdate("", "v0.6.0", platform.Linux); msg != "" {
+		t.Errorf("notice without SHA256SUMS: %q", msg)
+	}
+}
+
+// A build from source upgrades from source: a missing macOS binary does not
+// hold its notice, and SHA256SUMS is never asked.
+func TestUpdateCheckForASourceBuildIgnoresBinaries(t *testing.T) {
+	sums := sumLine("tycswap_v0.7.0_linux_amd64")
+	asked := releaseWithSums(t, "v0.7.0", &sums)
+	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000), Platform: func() platform.Platform { return platform.MacOS }}
+	if msg := c.CheckForUpdate("", "v0.6.0", platform.MacOS); !strings.Contains(msg, "(0.7.0)") {
+		t.Errorf("notice: %q", msg)
+	}
+	if asked.Load() != 0 {
+		t.Error("a source build asked for SHA256SUMS")
 	}
 }

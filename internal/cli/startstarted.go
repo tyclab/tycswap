@@ -52,7 +52,7 @@ func startStarted(in io.Reader) {
 			} else if observedModel != "" && (source == "resume" || mythosSessionDir != "") {
 				// A picker or --continue first identifies the session in this hook.
 				// A Mythos session moves on from here, also one that draws no
-				// status line: its client has read its login's settings (DESIGN A119).
+				// status line: its client has read its login's settings (DESIGN A120).
 				defer checkLinkedSession(session, observedModel, "hook")
 			}
 		}

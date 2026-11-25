@@ -1591,7 +1591,7 @@ start login allocated away from Mythos is not taken; a resume recorded on a
 start login starts there. The session's SessionStart hook moves it on, also
 in print mode: a resume to its recorded login while that has room, else to
 the selected login with room. Nothing moves it before that hook
-(DESIGN A119).
+(DESIGN A120).
 
 `start --next mythos` requests Mythos for the next bare native Claude start on
 this box on Linux, WSL or Windows. On macOS the control reports that independent
@@ -1656,7 +1656,7 @@ Marks are managed independently of these launch-only overrides.
 Without an override, an explicit UUID resume of a session recorded on an
 independently enrolled login uses that same identity, including after a
 native model change; on Linux and WSL a Mythos resume may begin on a start
-login and return to it at its SessionStart hook (A119). If the recorded
+login and return to it at its SessionStart hook (A120). If the recorded
 login is disabled or removed, the resume stops. A one-time allocation question names the model being resumed
 or explicitly requested. Other starts pick the credential store by model
 family. The settings it reads are, in this order, the `--settings`

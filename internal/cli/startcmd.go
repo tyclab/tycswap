@@ -268,7 +268,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			placement, err = selectStart(linked && linkErr == nil, mythosPlacement{})
 			if err == nil && placement.dir != "" && linked && linkErr == nil {
 				if placement.seed != "" {
-					// The link would seed the selection with the start login (DESIGN A119).
+					// The link would seed the selection with the start login (DESIGN A120).
 					linkErr = filelock.New(filepath.Join(root, ".lock"), filelock.DefaultTimeout).With(func() error {
 						return store.SeedMythosSelection(root, placement.seed)
 					})
@@ -278,7 +278,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 				}
 				if linkErr != nil && (placement.notice != "" || savedTarget == "" && parsed.account == "") {
 					// A direct launch uses the original ranking, never a start login
-					// (DESIGN A119). Keep consent only for the exact proposal.
+					// (DESIGN A120). Keep consent only for the exact proposal.
 					placement, err = selectStart(false, placement)
 				}
 			}

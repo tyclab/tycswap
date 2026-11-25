@@ -148,6 +148,11 @@ with `curl -LO`); Windows SmartScreen may warn the first time (*More info* →
 binary upgrades itself: `tycswap upgrade` and the tray download the next
 release over it after checking it against that release's `SHA256SUMS`.
 
+A release appears with its Linux and Windows binaries; the macOS binaries can
+follow later, when a Mac runner has built them. `SHA256SUMS` lists a binary
+once it is attached, and a release binary is offered a release only once its
+own build is listed there.
+
 ## Tasks
 
 Run `tycswap` to open the interactive menu, even while the tray is running.
@@ -759,7 +764,7 @@ even one at its limit while another Mythos login has room (a resume whose
 recorded login has room also with auto-switch off). Its SessionStart hook
 moves it on, in print mode too: a resume to its recorded login while that
 has room, else to the selected login. Claude Code reads its login's
-organization settings as it comes up (DESIGN A119). The native client
+organization settings as it comes up (DESIGN A120). The native client
 checks model access on that login. In-process subagents share their
 parent session's login. Removing the account also removes its independent
 credential. Moving the same account to a new slot preserves the credential.
@@ -987,6 +992,17 @@ exactly one matching line is refused) and renamed over the running file:
 ```
 $ tycswap upgrade
 Updated tycswap 0.6.0 → 0.7.0 (/home/me/.local/bin/tycswap).
+```
+
+While the newest release has no build for this machine yet (macOS binaries
+follow Linux and Windows), a release binary is not offered it: the passive
+notice stays silent, the dashboard's Updates card and the tray's check say the
+build is not published yet and offer no install, and `tycswap upgrade`
+installs nothing and exits 0:
+
+```
+$ tycswap upgrade
+tycswap 0.23.3 is the latest version for this machine: tycswap 0.24.0 is released, but its build for this machine (tycswap_v0.24.0_darwin_arm64) is not published yet. Try again later.
 ```
 
 A release binary that a package manager installed (in the Nix store, a
@@ -1522,6 +1538,16 @@ up. Switch to one by hand, confirm the prompt, then restart your sessions.
 login Keychain. The first credential read or write in a session may prompt for
 Keychain access. `tycswap purge` deletes the session-profile Keychain entries
 along with the backup store.
+
+## Releases
+
+A pull request releases by naming its version: it renames `## Unreleased` in
+[CHANGELOG.md](CHANGELOG.md) to `## vMAJOR.MINOR.PATCH`, and that section is
+the release's notes. When CI has passed on the merge commit, the Release
+workflow tags it and publishes the release; a merge that names no new version
+releases nothing. `make release-check` runs the check CI runs on every pull
+request. The steps, and what to do when a release stops, are in
+[docs/agents/releasing.md](docs/agents/releasing.md).
 
 ## License
 

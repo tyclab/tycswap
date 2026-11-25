@@ -44,7 +44,7 @@ var errNoMythosLogin = errors.New("no enabled, marked account with an independen
 type mythosPlacement struct {
 	dir, number, name, allocation string
 	// notice is start's line for a start on a start login, seed the login it
-	// records as the selection when there is none (DESIGN A119).
+	// records as the selection when there is none (DESIGN A120).
 	notice, seed string
 }
 
@@ -92,7 +92,7 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 }
 
 // locateStartMythos is a Mythos start's login. A linked start, fresh or a
-// resume, begins on a start login (DESIGN A119).
+// resume, begins on a start login (DESIGN A120).
 func locateStartMythos(root, model, account, session string, linked bool) (mythosPlacement, error) {
 	var scope string
 	if sessionUUID.MatchString(session) {
@@ -207,7 +207,7 @@ func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoS
 type mythosLoginRequest struct {
 	account, bound, source, selected string
 	start                            bool
-	// startLogins: a linked start, which begins on a start login (DESIGN A119).
+	// startLogins: a linked start, which begins on a start login (DESIGN A120).
 	startLogins bool
 }
 
@@ -340,7 +340,7 @@ func selectedFirst(ranked []string, placements map[string]mythosPlacement, selec
 // startLoginInstead is the start login a linked Mythos start takes instead of
 // would, the login it would get ("" for none): the ranked choice with room,
 // for a resume the recorded login. It returns the start's notice; false keeps
-// the start as it was (DESIGN A119). A start login is a ready Mythos login
+// the start as it was (DESIGN A120). A start login is a ready Mythos login
 // marked as a start login and not allocated away from Mythos. ranked is the
 // requested logins with room, room all ready logins with room, both ranked.
 //
