@@ -150,5 +150,6 @@ func repositoryChangelog(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	// A Windows checkout has CRLF line ends; the tests edit the text by line.
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
