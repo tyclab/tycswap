@@ -187,7 +187,14 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 	return out, nil
 }
 
+// ObservePIDScan is a test seam, nil in production: it is told every profile
+// directory whose live Claude PIDs ownership scans.
+var ObservePIDScan func(dir string)
+
 func profilePIDs(dir string) ([]int, error) {
+	if ObservePIDScan != nil {
+		ObservePIDScan(dir)
+	}
 	seen := map[int]bool{}
 	for registry, suffix := range map[string]string{"sessions": ".json", "ide": ".lock"} {
 		registryDir := filepath.Join(dir, registry)

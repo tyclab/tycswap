@@ -46,7 +46,7 @@ func FixturesDir(t *testing.T) string {
 // IsolateHome points every per-user path at a fresh, empty home on every
 // platform and returns it: the home variables are set to it and those that
 // would lead past it are unset, until the test ends.
-func IsolateHome(t *testing.T) string {
+func IsolateHome(t testing.TB) string {
 	t.Helper()
 	home := t.TempDir()
 	Setenv(t, "HOME", home)
@@ -111,13 +111,13 @@ func BuildFixtureHome(t *testing.T) FixtureHome {
 }
 
 // Setenv sets an env var for the test, restoring the prior value on cleanup.
-func Setenv(t *testing.T, key, value string) {
+func Setenv(t testing.TB, key, value string) {
 	t.Helper()
 	t.Setenv(key, value)
 }
 
 // Unsetenv unsets an env var for the test, restoring the prior value on cleanup.
-func Unsetenv(t *testing.T, key string) {
+func Unsetenv(t testing.TB, key string) {
 	t.Helper()
 	prev, had := os.LookupEnv(key)
 	// t.Setenv registers cleanup + guards against parallel tests; use it to set a
@@ -138,7 +138,7 @@ func Unsetenv(t *testing.T, key string) {
 }
 
 // FixedClock returns a clock.Fake anchored at the given RFC3339 timestamp.
-func FixedClock(t *testing.T, rfc3339 string) *clock.Fake {
+func FixedClock(t testing.TB, rfc3339 string) *clock.Fake {
 	t.Helper()
 	ts, err := time.Parse(time.RFC3339, rfc3339)
 	if err != nil {

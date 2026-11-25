@@ -266,7 +266,14 @@ func ReadOAuthIdentity() (email, orgUUID string, ok bool) {
 	return ReadOAuthIdentityFrom(paths.GetGlobalConfigPath())
 }
 
+// ObserveIdentityRead is a test seam, nil in production: it is told the path
+// of every config file whose oauthAccount identity is read.
+var ObserveIdentityRead func(path string)
+
 func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
+	if ObserveIdentityRead != nil {
+		ObserveIdentityRead(configPath)
+	}
 	m := readLenient(configPath)
 	if m == nil {
 		return "", "", false
