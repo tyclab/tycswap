@@ -35,6 +35,17 @@ type Checker struct {
 	Getenv func(string) string
 	// HomeDir is $HOME for install-shape detection; "" -> os.UserHomeDir().
 	HomeDir string
+	// Platform and Arch name this machine's release build; nil ->
+	// platform.Detect, "" -> runtime.GOARCH.
+	Platform func() platform.Platform
+	Arch     string
+}
+
+func (c Checker) platform() platform.Platform {
+	if c.Platform != nil {
+		return c.Platform()
+	}
+	return platform.Detect()
 }
 
 func (c Checker) clock() clock.Clock {
@@ -76,7 +87,7 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	if cached, ok := usage.ReadCache(cachePath, CacheTTL.Seconds(), now); ok {
 		latest, _ = cached.(string)
 	} else {
-		latest = c.fetchLatestTag()
+		latest = c.fetchLatestTag(plat)
 		var data any
 		if latest != "" {
 			data = latest
@@ -100,10 +111,10 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	)
 }
 
-func (c Checker) fetchLatestTag() string {
+func (c Checker) fetchLatestTag(plat platform.Platform) string {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()
-	tag, err := c.latestTag(ctx)
+	tag, err := c.latestTag(ctx, plat)
 	if err != nil {
 		return ""
 	}
@@ -115,9 +126,10 @@ func (c Checker) fetchLatestTag() string {
 // not check). The answer also refreshes cache/update_check.json, so the passive
 // notice of the next CLI command agrees with the card; a failure leaves the
 // cache alone. The tag is a v-prefixed semver string; one that is not
-// semver is an error, never a "newer version".
+// semver is an error, never a "newer version". A newer release whose build
+// for this machine is not attached yet is a *BuildPendingError.
 func (c Checker) Latest(ctx context.Context) (string, error) {
-	tag, err := c.latestTag(ctx)
+	tag, err := c.latestTag(ctx, c.platform())
 	if err != nil {
 		return "", err
 	}
@@ -128,9 +140,24 @@ func (c Checker) Latest(ctx context.Context) (string, error) {
 	return tag, nil
 }
 
-// latestTag is the one request both Latest and fetchLatestTag make.
-func (c Checker) latestTag(ctx context.Context) (string, error) {
-	return fetchLatestTag(ctx, c.client(), ReleasesURL, c.clock())
+// latestTag is the lookup both Latest and fetchLatestTag make. A release
+// build downloads its upgrade, so a newer release counts only once its
+// SHA256SUMS lists this machine's build (DESIGN A119); a build from source
+// is offered the tag alone.
+func (c Checker) latestTag(ctx context.Context, plat platform.Platform) (string, error) {
+	tag, err := fetchLatestTag(ctx, c.client(), ReleasesURL, c.clock())
+	if err != nil || DetectBuildSource() != SourceRelease || !semver.IsValid(tag) || semver.Compare(tag, linkedVersion()) <= 0 {
+		return tag, err
+	}
+	asset := AssetName(tag, plat, c.Arch)
+	if asset == "" {
+		return "", fmt.Errorf("tycswap %s has no build for this platform", strings.TrimPrefix(tag, "v"))
+	}
+	sums := strings.TrimRight(ReleasesURL, "/") + "/download/" + tag + "/SHA256SUMS"
+	if _, err := checksum(ctx, c.client(), sums, tag, asset); err != nil {
+		return "", err
+	}
+	return tag, nil
 }
 
 // limitedMsg is GitHub's 403 or 429: it limits the whole network (every
