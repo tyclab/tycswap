@@ -495,6 +495,13 @@ func TestStateBuildAnswersEachSessionAsAlone(t *testing.T) {
 			setRecord(t, sw, "7", "startLogin", false)
 		}},
 		{name: "Fable store empty", prepare: emptyFableStore},
+		{name: "Mythos logins spent, Fable store login unverified", prepare: func(t *testing.T, sw *core.Switcher, f *ownertest.Fixture) {
+			spendMythos(t, sw, f)
+			writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"), ownertest.Creds("unmatched"))
+		}, want: map[string]sessionAnswer{
+			// The refusal names the login asked about, not the one the session is on.
+			"default opus": {Moves: []string{}, Error: "no available Mythos login has quota for mythos\ncannot verify the current fable login for the session", Login: "default login", Owner: "1"},
+		}},
 		{name: "Mythos logins spent", prepare: spendMythos},
 		{name: "Mythos logins spent, Fable store empty", prepare: func(t *testing.T, sw *core.Switcher, f *ownertest.Fixture) {
 			spendMythos(t, sw, f)

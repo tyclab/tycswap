@@ -10081,7 +10081,9 @@ took 1, 4 and 12 Fable start snapshots; now each identity file and profile
 once (11 and 9 reads), the roster 465 to 467 times and one snapshot, whatever
 the number of sessions. `BenchmarkStateBuild` (four 250 KiB identity files,
 12 linked sessions): 3.5 s, 167 MB and 1.11 million allocations per build
-before, 0.37 s, 22 MB and 286,000 after, on a loaded box.
+before, 0.37 s, 22 MB and 286,000 after, on a loaded box. On the operator's
+store, the snapshot store-only, one whole build cost 2.9 CPU-seconds on
+0.23.1 and 0.45 after, measured back to back under the same load.
 
 **Limits.** A tick pass over 12 Fable sessions still takes 12 Fable start
 snapshots (343 identity reads of 4 files and 877 roster reads on the tests'
@@ -10089,6 +10091,17 @@ Fable fixture, as before). What A116 reads per question is still read per
 question: `CredentialOwner` is two thirds of the build's CPU left, and grows
 with accounts, not sessions. Each session's link record is read twice per
 build, for its login and for its moves, each time parsing `default_models.json`.
+
+**Found while measuring, not changed here.** A placement for Fable decided
+inside the move guard holds `<root>/.lock` (`reporting.withSessionRecords`)
+and reads the Fable start snapshot there; `BuildAccountsInfo` reads the
+credential of an account a profile or group owns through
+`Store.ReadOwnedCredentials`, which takes the same lock file through its own
+`FileLock`. The second lock waits its 10 seconds and the credential is read as
+empty, twice per snapshot: one tick placement of one Fable session took 60 s
+on the tests' ownership fixture, 0.09 s outside the guard. The decision uses
+the pool and the candidates only and comes out the same. Two ticks watched on
+the operator's box did not wait.
 
 **Tests.** In `cli`, on Linux: `TestStateBuildReadsEachInputOncePerBuild` (1,
 4 and 12 linked sessions, through `dashboardDeps`, newDashboard's wiring, with
@@ -10098,8 +10111,8 @@ identity, the default config and the default login changed between the two),
 `TestMutationsDuringAStateBuildReadAfresh` (a switch to an account a running
 profile signed in as; a move to a default login no longer verified),
 `TestStateBuildAnswersEachSessionAsAlone` (nine sessions on every kind of
-login, held and not, one refreshing, one on a login no account owns, in nine
-states, four of them against the answers recorded before),
+login, held and not, one refreshing, one on a login no account owns, in ten
+states, five of them against the answers recorded before),
 `TestFablePlacementDecidesEachSessionOnItsOwnReads`,
 `TestFablePlacementPassSeesAFableStoreSwitchBetweenSessions` and
 `BenchmarkStateBuild`; in `web`, `TestEachStateBuildReadsThroughItsOwnReads`.
