@@ -13,6 +13,7 @@ import (
 // flag come from the active store, every other slot's from its backup. Absence
 // of a live login or a managed match leaves all rows inactive.
 func BuildAccountsInfo(s *store.Store) []AccountInfo {
+	s = s.OneRead()
 	data, _ := s.SequenceMigrated()
 	if data == nil {
 		return nil

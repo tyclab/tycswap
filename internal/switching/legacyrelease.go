@@ -19,7 +19,10 @@ type stillHeld struct{ error }
 
 func (e stillHeld) Unwrap() []error { return []error{e.error, ErrStillHeld} }
 
+// ReleaseIdleLegacy releases number's idle former profile. It writes, so it
+// reads afresh whatever store it is handed (DESIGN A116).
 func ReleaseIdleLegacy(s *store.Store, number string) error {
+	s = s.Fresh()
 	var profile store.LegacyProfile
 	if err := s.Lock.With(func() error {
 		var err error

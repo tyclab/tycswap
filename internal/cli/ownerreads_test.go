@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -121,10 +122,16 @@ func TestTickSeesAnIdentityChangedBeforeItSwitches(t *testing.T) {
 	if !changed {
 		t.Fatal("the tick never polled")
 	}
+	refused := false
 	for _, ev := range events {
 		if _, switched := ev.(autoswitch.SwitchEvent); switched {
 			t.Fatalf("switched to an account a running profile signed in as: %+v", events)
 		}
+		ns, ok := ev.(autoswitch.NoSwitchEvent)
+		refused = refused || ok && strings.Contains(ns.Detail, "Account-4 has a running session profile")
+	}
+	if !refused {
+		t.Fatalf("no event held account 4 for the running profile: %+v", events)
 	}
 	if got := liveAccount(t, sw); got != f.Emails["1"] {
 		t.Fatalf("live login = %s, want account 1's", got)
@@ -141,6 +148,9 @@ func TestTickSeesASessionEndedSinceTheLastTick(t *testing.T) {
 	engine := onceEngine(sw, &events, nil)
 	if got := engine.Tick(); got != autoswitch.Blocked {
 		t.Fatalf("first tick = %v, want blocked; events %+v", got, events)
+	}
+	if ns, ok := events[len(events)-1].(autoswitch.NoSwitchEvent); !ok || ns.Reason != "accounts-in-use" || !strings.Contains(ns.Detail, "Account-4 has a running session profile") {
+		t.Fatalf("first tick did not hold account 4 for its session: %+v", events)
 	}
 	ownertest.EndSessions(t, f.Legacy["4"])
 	events = nil

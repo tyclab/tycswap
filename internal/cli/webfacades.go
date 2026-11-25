@@ -208,18 +208,20 @@ func newAutoFacade(sw *core.Switcher, codexSw *codexswitcher.Switcher) *autoFaca
 func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 
 // View is the engine's state and what it counts now; the policy behind the
-// count scans processes, so it runs outside the host's lock.
+// count scans processes, so it runs outside the host's lock. It is one read
+// operation (DESIGN A116).
 func (a *autoFacade) View() web.AutoView {
 	v, s, hosted := a.view()
 	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
+	read := a.sw.Store.OneRead()
 	var policy reporting.PolicyResult
-	v.Counting, policy = a.counting(s, hosted)
-	data, _ := a.sw.ReadSequence()
+	v.Counting, policy = a.counting(read, s, hosted)
+	data, _ := read.ReadSequence()
 	if data == nil {
 		v.Ranking = []string{}
 		return v
 	}
-	values := reporting.UsageByAccount(a.sw.Store)
+	values := reporting.UsageByAccount(read)
 	models := settings.ParseModelNames(policy.Settings.Model)
 	if slices.Contains(models, oauth.MythosModel) {
 		v.Counting.ModelsByAccount = make(map[string][]string)
@@ -231,24 +233,24 @@ func (a *autoFacade) View() web.AutoView {
 			}
 		}
 	}
-	v.Ranking = a.ranking(data, values, s, models, policy)
-	v.Fable = a.fable(data, values, s)
+	v.Ranking = a.ranking(read, data, values, s, models, policy)
+	v.Fable = a.fable(read, data, values, s)
 	return v
 }
 
 // ranking is the order the engine would take the other accounts in, over the
 // windows it counts now, with the accounts the policy reserves (DESIGN A99)
 // and only those it serves (A106).
-func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings, models []string, policy reporting.PolicyResult) []string {
+func (a *autoFacade) ranking(read *store.Store, data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings, models []string, policy reporting.PolicyResult) []string {
 	live := ""
-	if n := a.sw.CurrentAccountNumber(); n != nil {
+	if n := read.CurrentAccountNumber(); n != nil {
 		live = *n
 	}
 	quarantined := autoswitch.ReadQuarantineEntries(autoswitch.StatePath(a.sw.BackupDir()))
 	var candidates []string
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if _, held := quarantined[num]; num != live && !held && a.sw.RotationEligible(data, num) && (policy.Serves == nil || policy.Serves(num)) {
+		if _, held := quarantined[num]; num != live && !held && read.RotationEligible(data, num) && (policy.Serves == nil || policy.Serves(num)) {
 			candidates = append(candidates, num)
 		}
 	}
@@ -259,25 +261,25 @@ func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s 
 // nil while no account has a Fable login: its last tick, quarantine and
 // hold from its own state file, and the order a Fable tick would take its
 // pool in, counting the Fable windows as that tick does (A102).
-func (a *autoFacade) fable(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings) *web.FableAutoView {
-	if !a.sw.Store.HasFableLogins() {
+func (a *autoFacade) fable(read *store.Store, data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings) *web.FableAutoView {
+	if !read.HasFableLogins() {
 		return nil
 	}
-	f, err := a.sw.Store.ForFable()
+	f, err := read.ForFable()
 	if err != nil {
 		return nil
 	}
 	path, now := f.StatePath(), a.clk.Now()
-	names := reporting.FableWindowNames(a.sw.Store, now)
+	names := reporting.FableWindowNames(read, now)
 	counted := s
 	counted.Model = nil
 	if len(names) > 0 {
 		model := strings.Join(names, ",")
 		counted.Model = &model
 	}
-	live := a.sw.Store.WithoutLineageWrites().ResolveFableLiveSlot(data).Slot
+	live := read.WithoutLineageWrites().ResolveFableLiveSlot(data).Slot
 	var candidates []string
-	for _, num := range reporting.FablePool(a.sw.Store) {
+	for _, num := range reporting.FablePool(read) {
 		if num != live {
 			candidates = append(candidates, num)
 		}
@@ -286,7 +288,7 @@ func (a *autoFacade) fable(data *store.SequenceData, values map[string]any, s se
 		LastTickAt: autoswitch.ReadLastTick(path),
 		Caption:    strings.Join(append([]string{"Counting 5h + 7d"}, names...), " + "),
 		Ranking:    append([]string{}, autoswitch.RankTargets(candidates, values, counted, names, nil, now)...),
-		Quarantine: quarantineView(reporting.FableQuarantine(a.sw.Store)),
+		Quarantine: quarantineView(reporting.FableQuarantine(read)),
 	}
 	if until, held := handHoldUntil(path, s.CooldownSeconds, clock.Seconds(a.clk)); held {
 		v.HeldUntil = &until
@@ -326,16 +328,16 @@ func quarantineView(entries map[string]autoswitch.QuarantineEntry) map[string]an
 // counting is what the engine counts now (DESIGN A91, A97): an engine hosted
 // here keeps the models it was built with (ENG-8); the scheduled ticks count
 // what the default-session policy derives.
-func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, reporting.PolicyResult) {
+func (a *autoFacade) counting(read *store.Store, s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, reporting.PolicyResult) {
 	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
 	policy := reporting.PolicyResult{Settings: s}
 	switch {
 	case hosted:
 		c.Mode = "hosted"
 	default:
-		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
+		r := reporting.DefaultSessionPolicyResult(read, s, a.clk.Now())
 		c.Models, c.Sessions, c.Unservable = r.CountedWindows, r.Sessions, r.Unservable
-		c.Reserved, c.Mythos, c.FableOnDefault, policy = r.ReservedIn(a.sw.Store), r.Mythos, r.FableOnDefault, r
+		c.Reserved, c.Mythos, c.FableOnDefault, policy = r.ReservedIn(read), r.Mythos, r.FableOnDefault, r
 	}
 	for _, list := range []*[]string{&c.Models, &c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {

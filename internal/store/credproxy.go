@@ -140,6 +140,7 @@ func (s *Store) DeleteAccountFiles(num, email string) error {
 // backup store under the account FileLock (spec 01§ persist_backup_credentials).
 // The caller must NOT already hold the FileLock (it is non-reentrant).
 func (s *Store) PersistBackupCredentials(num, email, creds string) error {
+	s = s.Fresh()
 	return s.Lock.With(func() error {
 		owner, err := s.CredentialOwner(num)
 		if err != nil {

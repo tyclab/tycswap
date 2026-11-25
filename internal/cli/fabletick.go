@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -30,6 +31,8 @@ type fableAdapter struct {
 	def   *core.Switcher
 	fable *store.Store
 	log   *logging.Logger
+	// view is the tick's one read of the default store (DESIGN A116).
+	view *atomic.Pointer[core.Switcher]
 }
 
 var _ autoswitch.Switcher = fableAdapter{}
@@ -39,8 +42,16 @@ func newFableAdapter(def *core.Switcher, log *logging.Logger) (fableAdapter, err
 	if err != nil {
 		return fableAdapter{}, err
 	}
-	return fableAdapter{def: def, fable: f, log: log}, nil
+	return fableAdapter{def: def, fable: f, log: log, view: &atomic.Pointer[core.Switcher]{}}, nil
 }
+
+// BeginReads makes the pool and usage reads of a tick, until end, one read
+// operation, as tickAdapter does for the default engine.
+func (a fableAdapter) BeginReads() (end func()) {
+	return beginReads(a.view, a.def)
+}
+
+func (a fableAdapter) reads() *core.Switcher { return readsOf(a.view, a.def) }
 
 func (a fableAdapter) CurrentAccountNumber() *string {
 	data, _ := a.def.ReadSequence()
@@ -53,7 +64,7 @@ func (a fableAdapter) CurrentAccountNumber() *string {
 func (a fableAdapter) HasLiveLogin() bool             { return a.fable.HasLiveLogin() }
 func (a fableAdapter) AccountEmail(num string) string { return a.def.AccountEmail(num) }
 func (a fableAdapter) SwitchableAccountNumbers() []string {
-	return reporting.FableSwitchable(a.def.Store)
+	return reporting.FableSwitchable(a.reads().Store)
 }
 func (a fableAdapter) AccountKindFor(num string) string        { return a.def.AccountKindFor(num) }
 func (a fableAdapter) BackfillAccountUUID(num, uuid string)    { a.def.BackfillAccountUUID(num, uuid) }
@@ -80,7 +91,7 @@ func (a fableAdapter) RefreshBackupGuarded(ctx context.Context, c oauth.Client, 
 // UsageEntriesByAccount is the default store's collector: one fetch path,
 // with the default login, serves both stores.
 func (a fableAdapter) UsageEntriesByAccount(fetch map[string]bool) map[string]usage.UsageEntry {
-	return reporting.UsageEntriesByAccount(a.def.Store, fetch)
+	return reporting.UsageEntriesByAccount(a.reads().Store, fetch)
 }
 
 func (a fableAdapter) SwitchTo(num string, jsonOut bool) (map[string]any, error) {

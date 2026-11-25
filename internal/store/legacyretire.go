@@ -53,9 +53,23 @@ func (s *Store) LegacyProfileOf(number string) (LegacyProfile, error) {
 	}
 	_, p.Claimed = registry.Claims[number]
 	p.Stale = sessprofile.IsStale(p.Dir)
-	pids, err := profilePIDs(p.Dir)
+	pids, err := s.livePIDs(p.Dir)
 	p.Idle = err == nil && len(pids) == 0
 	return p, nil
+}
+
+// MayReleaseLegacy reports, as s reads it, whether releasing number's idle
+// former profile could do or refuse anything: false only when that profile
+// holds no stale login to drop and no former profile holds the account. On a
+// OneRead store it answers from that operation's reads, so it may only skip a
+// release; the release reads afresh (DESIGN A116).
+func (s *Store) MayReleaseLegacy(number string) bool {
+	p, err := s.LegacyProfileOf(number)
+	if err != nil || p.Stale && p.Idle && p.Pending() {
+		return true
+	}
+	candidate, err := s.legacyReleaseCandidate(number)
+	return err != nil || candidate != nil
 }
 
 // DiscardLegacyLogin drops an idle profile's login and claim without saving
@@ -65,6 +79,7 @@ func (s *Store) LegacyProfileOf(number string) (LegacyProfile, error) {
 // slot backup and the live credential are never written. The caller holds
 // the store lock and the profile's credential, config and storage-write locks.
 func (s *Store) DiscardLegacyLogin(number, expected string) error {
+	s = s.Fresh()
 	owner, value, err := s.idleLegacyProfile(number, expected)
 	if err != nil {
 		return err

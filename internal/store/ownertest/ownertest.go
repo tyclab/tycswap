@@ -263,6 +263,7 @@ func (c *Counts) AtMostOnce(t testing.TB, op string) {
 	if identity > 1 || pids > 1 {
 		t.Fatalf("%s read an identity file up to %d times and scanned a profile's PIDs up to %d times, want once each:\n%s", op, identity, pids, c)
 	}
+	t.Logf("%s:\n%s", op, c)
 }
 
 func write(t testing.TB, path, body string) {

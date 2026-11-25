@@ -269,12 +269,12 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 
 // Automatic moves honor the allocations of every known model on this login.
 type scheduledDefault struct {
-	autoswitchAdapter
+	tickAdapter
 	families []string
 }
 
 func (a scheduledDefault) SwitchableAccountNumbers() []string {
-	candidates := a.autoswitchAdapter.SwitchableAccountNumbers()
+	candidates := a.tickAdapter.SwitchableAccountNumbers()
 	if len(a.families) == 0 {
 		return candidates
 	}
@@ -301,7 +301,7 @@ func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent fun
 	if policy.OpusOnly {
 		opusOnly = func() bool { return defaultSessionPolicy(sw.Store, policy.Settings, sw.Clk.Now()).OpusOnly }
 	}
-	return autoswitch.NewEngine(scheduledDefault{autoswitchAdapter{engineSwitcher(sw, dryRun)}, families}, policy.Settings, onEvent, dryRun,
+	return autoswitch.NewEngine(scheduledDefault{newTickAdapter(engineSwitcher(sw, dryRun)), families}, policy.Settings, onEvent, dryRun,
 		autoswitch.WithOpusDrain(opusOnly),
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),

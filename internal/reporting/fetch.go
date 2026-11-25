@@ -19,6 +19,9 @@ import (
 // inactive account prefers a fresh session-profile credential (read-only) before
 // falling back to its backup.
 func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
+	// Which credential a fetch uses, and whether it may refresh, is decided
+	// on fresh reads (DESIGN A116).
+	s = s.Fresh()
 	num := strconv.Itoa(info.Number)
 	owner, err := s.CredentialOwner(num)
 	if err != nil || owner.Uncertain {

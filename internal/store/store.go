@@ -50,6 +50,8 @@ type Store struct {
 	lineageReadOnly        bool
 	fable                  bool
 	defaultCreds           credstore.Store
+	// memo is the read operation's identities and live PIDs (DESIGN A116).
+	memo *readMemo
 }
 
 // Options carries the injectable seams for New. All are optional: a zero
