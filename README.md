@@ -856,9 +856,8 @@ copied into the default profile, so `claude --resume` continues them.
 **The handover after a limit is removed.** `tycswap recovery`, the
 dashboard's *Continue after a limit* card and *Continue in Codex…* button and
 the tray's *Session at limit* item are gone: a session parked on a limit goes
-on when the login has room. Every `tycswap recovery` verb exits 2 with a line
-saying so, except `recovery record`, the hook a former group session may still
-run, which exits 0.
+on when the login has room. `recovery record`, the hook a former group session
+may still run, prints a line saying so and exits 0.
 
 #### Former session profiles
 

@@ -47,8 +47,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	if len(argv) > 0 && removedProfileCommands[argv[0]] {
 		return removedProfileCommand(prog, argv[0], s.err)
 	}
-	if len(argv) > 0 && argv[0] == "recovery" {
-		return removedRecoveryCommand(prog, argv[1:], s.err)
+	if len(argv) > 1 && argv[0] == "recovery" && argv[1] == "record" {
+		return removedRecoveryCommand(prog, s.err)
 	}
 	// Profile-aware launchers and hooks retain the inherited Claude profile.
 	hook := len(argv) > 1 && argv[0] == "groups" && argv[1] == "guard"
@@ -186,15 +186,12 @@ func removedProfileCommand(prog, name string, stderr io.Writer) int {
 	return 2
 }
 
-// removedRecoveryCommand answers every recovery verb since the handover after a
-// limit was removed (DESIGN A95). record is the lifecycle hook a former group
+// removedRecoveryCommand answers `recovery record` since the handover after a
+// limit was removed (DESIGN A95). It is the lifecycle hook a former group
 // session may still run (A78), so it fails open: exit 2 would block the prompt.
-func removedRecoveryCommand(prog string, args []string, stderr io.Writer) int {
+func removedRecoveryCommand(prog string, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "%s: error: %s recovery was removed: a session parked on a limit goes on when the login has room.\n", prog, prog)
-	if len(args) > 0 && args[0] == "record" {
-		return 0
-	}
-	return 2
+	return 0
 }
 
 func isTTY(f *os.File) bool {
