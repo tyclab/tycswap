@@ -87,7 +87,7 @@ func TestFableSessionStartsOnAStartLogin(t *testing.T) {
 	sw, rec := fableStartLogin(t, fx, "1")
 	setRecord(t, sw, "2", "subscriptionType", "enterprise", "fableContinue", true)
 	stderr := startFable(t)
-	want := "tycswap start: Fable store: Switched to start login Account-1, which is at its limit; auto-switch moves on once the session is up.\n"
+	want := "tycswap start: Fable store: Switched to start login Account-1, which is at its limit; auto-switch moves on once the session is up.\n" + signIn34Notice
 	if stderr != want {
 		t.Fatalf("stderr %q, want %q", stderr, want)
 	}
@@ -132,7 +132,7 @@ func TestFableStartLoginRanksAndHolds(t *testing.T) {
 	usage := map[string][3]float64{"1": {10, 20, 100}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}
 	t.Run("room first", func(t *testing.T) {
 		sw, rec := fableStartLogin(t, fableTickFixture{def: "1", live: "4", logins: []string{"1", "2", "4"}, usage: usage}, "1", "2")
-		if stderr := startFable(t); stderr != "tycswap start: Fable store: Switched to start login Account-2.\n" {
+		if stderr := startFable(t); stderr != "tycswap start: Fable store: Switched to start login Account-2.\ntycswap start: Account-3 needs a Fable sign-in: tycswap fable --login\n" {
 			t.Fatalf("stderr %q", stderr)
 		}
 		if !strings.Contains(storeLive(t, sw), "at-f2") || envValue(rec.env, holdVar) != "" || holdsIn(t, fableStatePath(sw)) != nil {
@@ -143,7 +143,7 @@ func TestFableStartLoginRanksAndHolds(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sw, rec := fableStartLogin(t, fableTickFixture{def: "1", live: live, logins: []string{"1", "2"}, usage: usage}, "1", "2")
 			before := readOrAbsent(t, fableStatePath(sw))
-			if stderr := startFable(t); stderr != "" {
+			if stderr := startFable(t); stderr != signIn34Notice {
 				t.Fatalf("stderr %q", stderr)
 			}
 			token := envValue(rec.env, holdVar)
@@ -182,7 +182,7 @@ func TestFableStartWithoutAMarkedFableLogin(t *testing.T) {
 			}
 			live := storeLive(t, sw)
 			stderr := startFable(t)
-			if stderr != fableStartNotice+"tycswap start: Switched to start login Account-1.\n" {
+			if stderr != fableStartNotice+signIn134Notice+"tycswap start: Switched to start login Account-1.\n" {
 				t.Fatalf("stderr %q", stderr)
 			}
 			if envValue(rec.env, secureStorageVar) != "" || !strings.Contains(defaultLive(t, sw), "at-d1") || storeLive(t, sw) != live {
@@ -223,7 +223,7 @@ func TestFableStartWithoutMarksOrAutoSwitchIsAsBefore(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sw, rec := fableStartLogin(t, fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"}, usage: usage, off: tc.off}, tc.marked...)
 			before, env := storeFiles(t, sw), os.Environ()
-			if stderr := startFable(t); stderr != "" {
+			if stderr := startFable(t); stderr != signIn34Notice {
 				t.Fatalf("stderr %q", stderr)
 			}
 			if !reflect.DeepEqual(rec.env, withFableStore(env, fableStoreDir())) {

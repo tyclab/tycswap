@@ -322,7 +322,7 @@ func TestStartAccountWithAFableSession(t *testing.T) {
 		usage := map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}
 		sw, rec := fableStartLogin(t, fableTickFixture{def: "1", live: "1", logins: []string{"1", "2"}, usage: usage})
 		stderr := startFable(t, "--account", "3")
-		if stderr != fableStartNotice+"tycswap start: Switched to start login Account-3.\n" {
+		if stderr != fableStartNotice+signIn34Notice+"tycswap start: Switched to start login Account-3.\n" {
 			t.Fatalf("stderr %q", stderr)
 		}
 		if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d3") || envValue(rec.env, secureStorageVar) != "" {

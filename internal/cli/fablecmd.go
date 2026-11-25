@@ -133,8 +133,7 @@ func fableRows(sw *core.Switcher) ([]fableRow, error) {
 			continue
 		}
 		r := fableRow{Number: num, Email: email, Answer: sw.Store.FableEntitlement(data, num), Login: sw.Store.HasFableLogin(num)}
-		_, quarantined := dead[num]
-		r.Missing = r.Answer.Capable && !store.DisabledFrom(data, num) && (!r.Login || quarantined)
+		r.Missing = r.Answer.Capable && !store.DisabledFrom(data, num) && reporting.NoUsableFableLogin(sw.Store, dead, num)
 		rows = append(rows, r)
 	}
 	return rows, nil

@@ -150,7 +150,8 @@ func (v *fableView) stateName() string {
 
 // object is the fable object of status --json and the dashboard's state:
 // the live account's fields in the shapes of status's active object, from
-// entry, its shared usage row.
+// entry, its shared usage row, and the accounts that need a Fable sign-in
+// in every state (DESIGN A115).
 func (v *fableView) object(s *store.Store, data *store.SequenceData, entry usage.UsageEntry) map[string]any {
 	obj := map[string]any{
 		"state":    v.stateName(),
@@ -163,6 +164,9 @@ func (v *fableView) object(s *store.Store, data *store.SequenceData, entry usage
 	}
 	if v.state.Reason != "" {
 		obj["reason"] = v.state.Reason
+	}
+	if nums := accountNumbers(FableSignInNeeded(s)); nums != nil {
+		obj["withoutLogin"] = nums
 	}
 	slot := v.live.Slot
 	if slot == "" {

@@ -164,7 +164,10 @@ markers: `(Fable store)` on the Fable store's account, `(Fable login)` on
 another account whose Fable login the store can use, and `(Fable login: sign
 in again)` on one whose Fable login the Fable engine quarantined
 (`invalid_grant`, or `identity-conflict`) and that has not been signed in
-again since. `(active)` stays the default login's.
+again since. `(active)` stays the default login's. After the accounts, the
+line `status` prints under its Fable store line names the accounts with Fable
+room but no Fable login (DESIGN A112) or, without them, the accounts that need
+a Fable sign-in (A115).
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -203,7 +206,13 @@ also carries `fableRoomWithoutLogin`: the accounts (ints) that are enabled,
 rotation-eligible, able to run Fable, not allocated away from it, have room
 for Fable and hold no Fable login, present only when there is one (DESIGN
 A112). The human list then ends its accounts with the line `status` prints
-for them.
+for them. Whatever the room, while an account has a Fable login it also carries
+`fableWithoutLogin`: the accounts (ints) that need a Fable sign-in, the
+enabled, rotation-eligible accounts able to run Fable and not allocated away
+from it that hold no usable Fable login (none, or one that reads `sign in
+again`), in roster order, present only when there is one (DESIGN A115). It is
+independent of `fableRoomWithoutLogin`; while that one names accounts, the
+human list prints its line instead of the sign-in sentence.
 
 An `<account-row>` object contains these keys.
 
@@ -320,7 +329,10 @@ can hold has room for Fable, a line under it names the accounts with Fable
 room but no Fable login and the command that signs them in (DESIGN A112,
 A114): `Account-11 has Fable room but no Fable login: tycswap fable --login`,
 or `Accounts 7, 11 and 12 have Fable room but no Fable login: tycswap fable
---login`.
+--login`. Otherwise, in the same place and colour, it names the accounts that
+need a Fable sign-in (DESIGN A115): `Account-7 needs a Fable sign-in: tycswap
+fable --login`, or `Accounts 7, 11 and 12 need a Fable sign-in: tycswap fable
+--login`. Never both lines.
 
 ### Files
 
@@ -373,6 +385,7 @@ object (DESIGN A104), whatever `active` is; without one it is absent:
 | `source` | string \| null | What named the account: `backup`, `chain` or `profile` (DESIGN A68); `null` while unknown. |
 | `reason` | string | Present while the store is off or unusable: `the store is empty`, `Account-N's Fable login: sign in again`. |
 | `roomWithoutLogin` | int array | Present while no account the Fable store can hold has room for Fable and an account has Fable room but no Fable login: those accounts, as `list`'s `fableRoomWithoutLogin` (DESIGN A112). |
+| `withoutLogin` | int array | Present while an account needs a Fable sign-in, in every state: those accounts, as `list`'s `fableWithoutLogin`, independent of `roomWithoutLogin` (DESIGN A115). The dashboard's state carries the same object. |
 
 ### Errors
 
@@ -1662,6 +1675,7 @@ For direct launches, the child environment in this table names the chosen store.
 | Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
 | Fable | on and usable, no account it can hold with room for Fable, the default login's account with room, no `--account` | that variable removed if it named the store | runs | `tycswap start: Fable store: no Fable login has room (first back: Account-<n> at <time>); starting on the default login.`, then the accounts with Fable room but no Fable login (see below) |
 | Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | keeps the current Fable login | none |
+| Fable | on and usable, as in the four rows above, with accounts that need a Fable sign-in | as in that row | as in that row | after that row's notice, unless it ended in the accounts with Fable room but no Fable login: `tycswap start: Accounts 1 and 4 need a Fable sign-in: tycswap fable --login` (see below) |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
 
@@ -1691,6 +1705,15 @@ Fable room but no Fable login, as `status` does: `Account-11 has Fable room
 but no Fable login: tycswap fable --login`. With an
 account in the Fable pool that has room the selection above runs as before,
 a marked login at its limit included.
+
+A start that reaches the selection on the Fable store, wherever it then
+starts, names after that selection's notices the accounts that need a Fable
+sign-in, the set `status` names (DESIGN A115): `tycswap start: Account-7 needs
+a Fable sign-in: tycswap fable --login`, or `Accounts 7, 11 and 12 need …`. It
+is printed once, on stderr only, never to `tycswap.log`, and not when the
+placement rule's notice already ended in the accounts with Fable room but no
+Fable login. A start of another model, and a Fable start with the store off or
+unusable, prints no such line.
 
 Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below) and
 `TYCSWAP_START_FAMILY` ([tycswap mythos](#tycswap-mythos)). The
@@ -3510,8 +3533,16 @@ tabs:
   row with a usable Fable login has *Use for Fable*, `POST
   /api/switch/{key}?store=fable`; on the Fable store's own row it reads *Fable
   here* and is disabled. The menu of a row without a Fable login names that
-  command. *Switch*, *Switch now* and the *Best candidate* stay the default
-  store's.
+  command. From the state's `fable.withoutLogin` (DESIGN A115), the Fable line
+  adds a warning chip `N need a Fable sign-in` (`1 needs a Fable sign-in`)
+  whose tooltip is the whole instruction, a warning notice above the accounts,
+  beside the auth-overrides notice, names those accounts as the page names
+  them (`#7 alias · email`): `<accounts> need a Fable sign-in: the Fable store
+  cannot use them until then. In a terminal: tycswap fable --login`, and a row
+  of the set without a Fable login carries a `no Fable login` warning chip
+  whose tooltip is that command; a row whose Fable login reads *sign in again*
+  keeps its own chip. Chip and notice go when the set empties. *Switch*,
+  *Switch now* and the *Best candidate* stay the default store's.
 - **Auto** (DESIGN A93): the heading `Auto-switch` with an `on` or `off`
   chip and one *Auto-switch* switch, `autoswitch.enabled`: on is
   `POST /api/auto/start`, off `POST /api/auto/stop` (DESIGN A83). The line
@@ -3660,7 +3691,8 @@ When a shared Mythos session uses different meter names across accounts,
 `auto.counting.modelsByAccount` gives the counted names for rows that differ
 from `auto.counting.models`, keyed by account number.
 While an account has a Fable login (DESIGN A104) the document carries `fable`,
-the object `status --json` carries; each Claude row with a Fable login
+the object `status --json` carries, `withoutLogin` included (DESIGN A115);
+each Claude row with a Fable login
 carries `fableLogin` as in `list --json`; and `auto.fable` is the Fable
 store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
 "heldUntil"?}`, read from `fable/autoswitch_state.json` (`lastTickAt` epoch

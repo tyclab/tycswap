@@ -148,12 +148,13 @@ func unmanagedStatus(email string) map[string]any {
 
 // renderStatus prints the human status view to w (spec 02§12), and the
 // Fable store's line after it while an account has a Fable login (DESIGN
-// A104), then the accounts with Fable room but no Fable login (A112).
+// A104), then the accounts with Fable room but no Fable login (A112) or,
+// without them, those that need a Fable sign-in (A115).
 func renderStatus(w io.Writer, s *store.Store) {
 	renderActiveStatus(w, s)
 	if _, line, ok := fableStatus(s); ok {
 		fmt.Fprintln(w, line)
-		if _, hint := fableRoomWithoutLogin(s); hint != "" {
+		if hint := fableLoginLine(s); hint != "" {
 			fmt.Fprintln(w, hint)
 		}
 	}

@@ -131,6 +131,9 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 		if nums, _ := fableRoomWithoutLogin(s); nums != nil {
 			payload["fableRoomWithoutLogin"] = nums
 		}
+		if nums := accountNumbers(FableSignInNeeded(s)); nums != nil {
+			payload["fableWithoutLogin"] = nums
+		}
 	}
 	if dup := duplicateAccountWarnings(s, infos); len(dup) > 0 {
 		payload["duplicateAccountWarnings"] = dup
@@ -212,7 +215,7 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 	}
 
 	if fable != nil {
-		if _, hint := fableRoomWithoutLogin(s); hint != "" {
+		if hint := fableLoginLine(s); hint != "" {
 			fmt.Fprintln(w, hint)
 		}
 	}

@@ -113,12 +113,12 @@ func TestNativeSessionLinkFailureLaunchesWithOriginalStore(t *testing.T) {
 	startResolve = func(string) (string, error) { return "/fixture/claude", nil }
 	writeFile(t, filepath.Join(sw.BackupDir(), "links"), "fixture: cannot create links inside a file")
 	for _, model := range []string{"fable", "opus"} {
-		want := ""
+		want, notices := "", 1
 		if model == "fable" {
-			want = fableStoreDir()
+			want, notices = fableStoreDir(), 2
 		}
 		code, _, msg := runCLI(t, []string{"start", "--", "claude", "--model", model}, false, false)
-		if code != 23 || envValue(rec.env, secureStorageEnv) != want || strings.Count(msg, "\n") != 1 || !strings.Contains(strings.ToLower(msg), "link") {
+		if code != 23 || envValue(rec.env, secureStorageEnv) != want || strings.Count(msg, "\n") != notices || !strings.Contains(strings.ToLower(msg), "link") {
 			t.Fatalf("%s fallback got exit %d, dir %q, notice %q", model, code, envValue(rec.env, secureStorageEnv), msg)
 		}
 	}

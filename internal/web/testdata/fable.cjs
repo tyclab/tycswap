@@ -157,6 +157,47 @@ if (process.argv[3] === 'editor') {
   assert.deepEqual(moves({pid: 12, sessionId: 'test', moves: ['mythos', 'fable', 'default']}), ['Move to Mythos login','Move to Fable store','Move to default login']);
   assert.deepEqual(moves({pid: 13, sessionId: 'legacy'}), []);
   process.exit(0);
+} else if (process.argv[3] === 'signin') {
+  // The accounts that need a Fable sign-in (DESIGN A115), from
+  // fable.withoutLogin: the header chip, the notice and the row chip.
+  for (const id of ['onboard', 'auth-overrides', 'auth-overrides-env', 'auth-overrides-env-keys', 'auth-overrides-settings', 'auth-overrides-settings-keys',
+    'auth-overrides-path', 'fable-signin', 'fable-signin-text']) { ids[id] = new Node('div'); }
+  block('  // ---- onboarding (DESIGN A27)', '  // ---- updates (DESIGN A27)');
+  const withSet = (...nums) => { const st = fableState(); st.fable.withoutLogin = nums; return st; };
+  const headerChip = () => ids['hdr-acct'].all().filter(e => e.className.startsWith('chip') && /Fable sign-in/.test(text(e)));
+  const both = '#4 acct4@example.com and #5 acct5@example.com need a Fable sign-in: the Fable store cannot use them until then.';
+  render(withSet(4, 5));
+  assert.deepEqual(headerChip().map(c => [text(c), c.className, titleOf(c)]),
+    [['2 need a Fable sign-in', 'chip chip-warn', both + ' In a terminal: tycswap fable --login']]);
+  ctx.renderActiveStrip(fableState());
+  assert.equal(headerChip().length, 0, 'the chip stays after the set emptied');
+  ctx.renderActiveStrip(withSet(5));
+  assert.deepEqual(headerChip().map(text), ['1 needs a Fable sign-in']);
+  const off = withSet(5); off.fable = {state: 'off', number: null, reason: 'the store is empty', withoutLogin: [5]};
+  ctx.renderActiveStrip(off);
+  assert.deepEqual(headerChip().map(text), ['1 needs a Fable sign-in'], 'the store off hides the chip');
+
+  ctx.renderOnboarding(withSet(4, 5));
+  assert.equal(ids['fable-signin'].hidden, false);
+  assert.equal(ids.onboard.hidden, false);
+  assert.equal(text(ids['fable-signin-text']), both);
+  ctx.renderOnboarding(withSet(5));
+  assert.equal(text(ids['fable-signin-text']), '#5 acct5@example.com needs a Fable sign-in: the Fable store cannot use it until then.');
+  ctx.renderOnboarding(fableState());
+  assert.equal(ids['fable-signin'].hidden, true);
+  assert.equal(ids.onboard.hidden, true);
+  ctx.renderOnboarding(plainState());
+  assert.equal(ids['fable-signin'].hidden, true);
+
+  // 5 has no Fable login, 4's reads sign in again, 1 has none and is not in the set.
+  render(withSet(4, 5));
+  const noLogin = n => chips(n).filter(c => c[0] === 'no Fable login');
+  assert.deepEqual(noLogin(5), [['no Fable login', 'chip chip-warn', 'tycswap fable --login']]);
+  for (const n of [1, 2, 3, 4]) { assert.equal(noLogin(n).length, 0, '#' + n + ' has a no Fable login chip'); }
+  assert.deepEqual(chips(4).filter(c => /Fable/.test(c[0])).map(c => c[0]), ['Fable login: sign in again']);
+  render(fableState());
+  assert.equal(noLogin(5).length, 0, 'the row chip stays without a set');
+  console.log('fable sign-in: header chip, notice and row chip passed');
 }
 
 if (!process.argv[3]) {

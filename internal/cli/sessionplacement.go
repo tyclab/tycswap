@@ -275,7 +275,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 			}
 			held := explicit || rec.Wanted == "fable"
 			if !toDefault && !held {
-				toDefault, _ = fableSessionOnDefault(view)
+				toDefault, _, _ = fableSessionOnDefault(view)
 			}
 			if !toDefault {
 				target.dir = paths.FableStoreDir(root)

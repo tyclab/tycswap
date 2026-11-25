@@ -803,8 +803,13 @@
     $('auth-overrides-settings').hidden = !setKeys.length;
     $('auth-overrides-settings-keys').textContent = setKeys.join(', ');
     $('auth-overrides-path').textContent = ov.settingsPath || 'settings.json';
+    // Beside it, the accounts the Fable store cannot use until they sign in
+    // for Fable (DESIGN A115); the command is in the markup.
+    var signIn = fableSignIn(st);
+    $('fable-signin').hidden = !signIn;
+    $('fable-signin-text').textContent = signIn ? signIn.text : '';
     // An empty wrapper would still take a grid gap at the top of the panel.
-    $('onboard').hidden = !any;
+    $('onboard').hidden = !any && !signIn;
   }
 
   // ---- updates (DESIGN A27) ---------------------------------------------------
@@ -1055,7 +1060,7 @@
     var fable = fableLine(st);
     var mythos = mythosLine(st);
     if (mythos) { sig += JSON.stringify(st.mythos); }
-    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, accts.map(accountLabel)]); }
+    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, st.fable.withoutLogin, accts.map(accountLabel)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
     clear(box);
@@ -1087,24 +1092,45 @@
     if (mythos) { box.appendChild(mythos); }
   }
 
+  // fableSignIn: the accounts that need a Fable sign-in (DESIGN A115), their
+  // count and the sentence that names them; null without any.
+  function fableSignIn(st) {
+    var nums = (st.fable && st.fable.withoutLogin) || [];
+    if (!nums.length) { return null; }
+    var rows = claudeRows(st);
+    var labels = nums.map(function (n) {
+      var row = rows.filter(function (a) { return String(a.number) === String(n); })[0];
+      return row ? accountLabel(row) : '#' + n;
+    });
+    var one = labels.length === 1;
+    var who = one ? labels[0] : labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
+    return { count: labels.length, text: who + (one ? ' needs' : ' need') + ' a Fable sign-in: the Fable store cannot use ' + (one ? 'it' : 'them') + ' until then.' };
+  }
+
   // fableLine: the header's second line while an account has a Fable login
   // (DESIGN A104): the Fable store's account, or that the store is off and
-  // the command that turns it on.
+  // the command that turns it on; then how many accounts need a Fable sign-in.
   function fableLine(st) {
     var f = st.fable;
     if (!f) { return null; }
+    var line;
     if (f.state === 'parked') {
-      return el('div', { class: 'hdr-fable', text: 'Fable store: ' + (f.startup || 'parked') });
+      line = el('div', { class: 'hdr-fable', text: 'Fable store: ' + (f.startup || 'parked') });
+    } else if (f.state === 'off') {
+      line = el('div', { class: 'hdr-fable', text: 'Fable store off', title: 'Turn it on: ' + NAME + ' switch --store fable <account>' });
+    } else {
+      var row = claudeRows(st).filter(function (a) { return String(a.number) === String(f.number); })[0];
+      var who = f.number == null ? 'account unknown' : accountLabel({
+        number: f.number, alias: row && row.alias, email: (row && row.email) || f.email
+      });
+      line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { text: 'Fable: ' + who })]);
+      if (f.state === 'unusable') { line.appendChild(chip('Fable login: sign in again', 'warn', f.reason || '')); }
     }
-    if (f.state === 'off') {
-      return el('div', { class: 'hdr-fable', text: 'Fable store off', title: 'Turn it on: ' + NAME + ' switch --store fable <account>' });
+    var signIn = fableSignIn(st);
+    if (signIn) {
+      line.appendChild(chip(signIn.count + (signIn.count === 1 ? ' needs' : ' need') + ' a Fable sign-in', 'warn',
+        signIn.text + ' In a terminal: ' + fableSignInCommand()));
     }
-    var row = claudeRows(st).filter(function (a) { return String(a.number) === String(f.number); })[0];
-    var who = f.number == null ? 'account unknown' : accountLabel({
-      number: f.number, alias: row && row.alias, email: (row && row.email) || f.email
-    });
-    var line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { text: 'Fable: ' + who })]);
-    if (f.state === 'unusable') { line.appendChild(chip('Fable login: sign in again', 'warn', f.reason || '')); }
     return line;
   }
 
@@ -1176,10 +1202,15 @@
 
   // fableChips: a row's place in the Fable store (DESIGN A104): the store's
   // account, a Fable login, or one to sign in again with the command that
-  // does it; nothing for a row without a Fable login.
-  function fableChips(a) {
+  // does it; a row without a Fable login that needs a Fable sign-in says so
+  // (A115), any other none.
+  function fableChips(a, st) {
     var l = a.fableLogin, out = [];
-    if (!l) { return out; }
+    if (!l) {
+      var missing = ((st && st.fable && st.fable.withoutLogin) || []).map(String);
+      if (missing.indexOf(String(a.number)) >= 0) { out.push(chip('no Fable login', 'warn', fableSignInCommand())); }
+      return out;
+    }
     if (l.live) { out.push(chip('Fable', 'accent', "The Fable store's account: Fable sessions run on its Fable login")); }
     if (l.status !== 'ok') { out.push(chip('Fable login: sign in again', 'warn', 'Sign in again: ' + fableLoginCommand(a))); }
     else if (!l.live) { out.push(chip('Fable login', 'outline', 'The Fable store can use this account')); }
@@ -1187,6 +1218,7 @@
   }
 
   function fableLoginCommand(a) { return NAME + ' add --login --lineage fable --slot ' + a.number; }
+  function fableSignInCommand() { return NAME + ' fable --login'; }
 
   // fableButton: Use for Fable on a row with a usable Fable login; on the
   // Fable store's own account it says so and does nothing.
@@ -1344,7 +1376,7 @@
         nameRow.appendChild(chip(label, login.status !== 'ok' ? 'warn' : login.live ? 'accent' : 'outline',
           login.status === 'sign in again' ? 'Sign in again: ' + NAME + ' add --login --lineage mythos --slot ' + a.number : 'Independent Mythos sign-in'));
       }
-      statusChips(a).concat(fableChips(a)).forEach(function (c) { nameRow.appendChild(c); });
+      statusChips(a).concat(fableChips(a, st)).forEach(function (c) { nameRow.appendChild(c); });
       acct.appendChild(nameRow);
       var meta = el('div', { class: 'acct-meta' });
       if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
@@ -2057,6 +2089,7 @@
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
     renderGuarded('dashboard', 'accounts-card',
       { accounts: accountView.accounts, active: accountView.activeNumber, order: accountOrder, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
+        fableWithoutLogin: st.fable && st.fable.withoutLogin,
         auto: st.auto && { running: st.auto.running, settings: st.auto.settings, counting: st.auto.counting, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
       function () { renderSummary(accountView); renderAccounts(accountView); });
     renderGuarded('auto', 'panel-auto',

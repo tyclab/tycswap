@@ -179,6 +179,8 @@ p { margin: 0; }
   --line: var(--bar-line); --line-2: var(--bar-line);
   --card: var(--bar-2); --card-2: var(--bar-2);
   --neutral-soft: rgba(255, 255, 255, .1);
+  /* status text too: the light theme's inks are dark, for light surfaces */
+  --good-ink: #5fd98a; --warn-ink: #f6c65a; --serious-ink: #f5a888; --crit-ink: #f58484;
   /* on the dark bar the bright blue is the accent, in both themes */
   --accent: var(--brand); --accent-ink: var(--brand); --accent-fg: var(--brand-tile); --focus: var(--brand);
   color-scheme: dark;
@@ -207,6 +209,7 @@ p { margin: 0; }
 
 .notice { margin-top: var(--s3); padding: var(--s3); border-radius: .625rem; border: 1px solid; font-size: var(--t13); line-height: 1.5; }
 .notice-crit { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+.notice-warn { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .hdr-acct { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr); gap: .125em; min-width: 0; inline-size: min(100%, 100ch); overflow-wrap: anywhere; }
 .hdr-usage { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: .25em 1em; }
 .hdr-who > :not(:last-child) { margin-inline-end: var(--s2); }
@@ -655,6 +658,8 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 :root[data-theme="dark"] { --info-ink: var(--brand-lavender); }
 
 .onboard { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gutter); }
+.onboard .notice { margin-top: 0; }
+.onboard .notice code { background: var(--neutral-soft); padding: .0625rem .375rem; border-radius: .25rem; overflow-wrap: anywhere; }
 .auth-warn { border-left: .375rem solid var(--warn); }
 .auth-warn h2 { margin: 0 0 var(--s2); font-size: var(--t16); }
 .auth-warn p { margin: 0 0 var(--s2); font-size: var(--t13); line-height: 1.6; color: var(--fg-2); }
