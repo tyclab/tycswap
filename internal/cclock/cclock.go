@@ -95,7 +95,8 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 		return nil, err
 	}
 	site := locknest.Here()
-	locknest.Nested(nil, lockDir, nil, site)
+	// The goroutine holding lockDir is the one that would wait (DESIGN A118).
+	nested := locknest.Nested(nil, lockDir, nil, site)
 
 	start := time.Now() // monotonic reading embedded; time.Since below is monotonic.
 	for {
@@ -106,7 +107,7 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 		if !errors.Is(err, fs.ErrExist) && !pendingDelete(err) {
 			return nil, err
 		}
-		if time.Since(start) >= timeout {
+		if nested || time.Since(start) >= timeout {
 			name := filepath.Base(lockDir)
 			if staleness == 0 {
 				if fi, err := os.Stat(lockDir); err == nil {

@@ -190,6 +190,18 @@ func (s *Store) BackupDir() string { return s.backupDir }
 // (Options.Keychain; keychain.Security by default).
 func (s *Store) Keychain() keychain.KeychainClient { return s.kc }
 
+// UnderLock is s with lock, the store lock a caller that holds it lends
+// (filelock.Lend), as its store lock: what takes the store lock on it runs
+// under that hold instead of asking for the file again (DESIGN A118).
+func (s *Store) UnderLock(lock *filelock.FileLock) *Store {
+	clone := *s
+	clone.Lock = lock
+	if clone.group != "" {
+		clone.Creds = &profileCredentials{Store: clone.sharedCreds, owner: &clone}
+	}
+	return &clone
+}
+
 func (s *Store) timestamp() string {
 	return s.Clk.Now().UTC().Format("2006-01-02T15:04:05Z")
 }

@@ -84,15 +84,15 @@ func switchMythosBy(sw *core.Switcher, id, actor string) (map[string]any, error)
 			continue
 		}
 		redirected := false
-		err := reporting.MoveSessionLink(sw.Store, actor+" (switch --store mythos)", link.ID, filepath.Join(root, "links", link.Token), false, func(current *reporting.SessionLink) error {
+		err := reporting.MoveSessionLink(sw.Store, actor+" (switch --store mythos)", link.ID, filepath.Join(root, "links", link.Token), false, func(view *store.Store, current *reporting.SessionLink) error {
 			if !wantsMythosLogin(*current) {
 				return nil
 			}
-			data, err := sw.SequenceForUpdate()
+			data, err := view.SequenceForUpdate()
 			if err != nil {
 				return err
 			}
-			login, err := sw.MythosLogin(data, num)
+			login, err := view.MythosLogin(data, num)
 			if err != nil {
 				return err
 			}

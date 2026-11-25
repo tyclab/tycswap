@@ -166,7 +166,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 			continue
 		}
 		var placement mythosPlacement
-		apply := func(current *reporting.SessionLink) error {
+		apply := func(view *store.Store, current *reporting.SessionLink) error {
 			if !runsOnMythos(root, *current) {
 				return nil
 			}
@@ -175,7 +175,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 			if !dryRun {
 				currentSettings.Enabled = autoSwitchOn(root)
 			}
-			placement, err = mythosTickPlacement(sw.Store, current.Target, currentSettings, dryRun)
+			placement, err = mythosTickPlacement(view, current.Target, currentSettings, dryRun)
 			if err != nil {
 				return err
 			}
@@ -186,7 +186,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 				return fmt.Errorf("%w for Account-%s", errMythosAllocation, placement.number)
 			}
 			if !dryRun {
-				if err := rememberMythosPlacement(sw.Store, placement); err != nil {
+				if err := rememberMythosPlacement(view, placement); err != nil {
 					return err
 				}
 			}
@@ -194,7 +194,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 			return nil
 		}
 		if dryRun {
-			err = apply(&link)
+			err = apply(sw.Store, &link)
 		} else {
 			err = reporting.MoveSessionLink(sw.Store, "tick", link.ID, filepath.Join(root, "links", link.Token), false, apply)
 		}

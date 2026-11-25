@@ -1,7 +1,9 @@
 // Package locknest notices a goroutine that asks for a lock it already holds
 // (DESIGN A118). filelock and cclock record each lock a goroutine takes and
-// ask here before they wait for one. Such a request cannot succeed: the
-// holder is the goroutine that would wait.
+// ask here before they wait for one. They refuse such a request at once: the
+// holder is the goroutine that would wait, so the wait could only end in its
+// timeout's answer. A test binary fails on it instead, naming both call
+// sites, unless a test observes nestings.
 package locknest
 
 import (
@@ -15,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 )
 
 // Site is a goroutine at the place it asked for a lock.
@@ -134,7 +137,8 @@ func frames(pcs []uintptr) string {
 
 var observer atomic.Pointer[func(Nesting)]
 
-// Observe is a test seam: fn is told of every nesting until restore runs.
+// Observe is a test seam: fn is told of every nesting, in place of the test
+// binary failing, until restore runs.
 func Observe(fn func(Nesting)) (restore func()) {
 	prev := observer.Swap(&fn)
 	return func() { observer.Store(prev) }
@@ -143,5 +147,11 @@ func Observe(fn func(Nesting)) (restore func()) {
 func report(n Nesting) {
 	if fn := observer.Load(); fn != nil {
 		(*fn)(n)
+		return
+	}
+	if testing.Testing() {
+		// Code under test could recover a panic raised on this goroutine.
+		go func() { panic("locknest: " + n.String()) }()
+		select {}
 	}
 }
