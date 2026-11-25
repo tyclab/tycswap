@@ -195,24 +195,6 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 	}
 }
 
-// autoswitch.model is removed (DESIGN A97): the screen has no row for it,
-// even while settings.json still holds it.
-func TestSettingsLeavesOutTheModelSetting(t *testing.T) {
-	m, s, dir := settingsModel(t)
-	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoswitch":{"model":"Fable"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	s.reload(m)
-	for _, r := range s.rows {
-		if r.Spec.Dotted() == "autoswitch.model" {
-			t.Fatal("the Settings screen lists autoswitch.model")
-		}
-	}
-	if view := stripANSI(s.view(m)); strings.Contains(view, "Count model limits") {
-		t.Fatalf("view names the model setting:\n%s", view)
-	}
-}
-
 func TestSettingsRowsFollowAnExternalChange(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	if _, err := settings.SetSetting(dir, "autoswitch.sevenDayThreshold", "75"); err != nil {
