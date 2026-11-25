@@ -10494,15 +10494,16 @@ start login Account-N, which is at its limit.` A resume whose recorded login
 has room still takes a start login: its return there is the resume binding,
 not auto-switch.
 
-**Moving on.** The SessionStart hook binds the link and, when Claude Code
-names its model, places the session as its status line would
-(`checkLinkedSession`, logged `by hook`). A resume returns to its recorded
+**Moving on.** The SessionStart hook binds the link and places the session
+as its status line would (`checkLinkedSession`, logged `by hook`): by the
+model Claude Code names, else by the family `start` read for the launch
+(`TYCSWAP_START_FAMILY`; A122). A resume returns to its recorded
 login (`resumeMythos`, set by `bindSessionLink`) while that has room. Any
 other session moves as a linked Mythos session (`mythosTickPlacement`): to
 the selected login with known room, else to the best with known room, else
 it stays and a tick moves it later. A print-mode session, which draws no
-status line, moves the same way. Without a model the first status-line
-report places it. `SessionBinding` names an unreached `resumeMythos` before
+status line, moves the same way. With neither a model nor a family the first
+status-line report places it. `SessionBinding` names an unreached `resumeMythos` before
 the store a session ended on, so the next resume is placed by its recorded
 login. Once moved, a report or tick moves the session to the selected login
 when that differs and has known room, as for any linked Mythos session.
@@ -10521,8 +10522,8 @@ while it connects (`Session creation failed (server 400)`); `/remote-control`
 connects it. A login whose room is unknown counts as room for the start but
 not for the move: with no known room at the hook, a print-mode session on a
 start login at its limit sends its requests there until a tick moves it. A
-hook without a model leaves a print-mode session on its start login. A fresh
-session that ends on its start login before any move is recorded there.
+fresh session that ends on its start login before any move is recorded
+there.
 
 **Tests** (`cli`, Linux): `TestMythosResumeBeginsOnAStartLogin` (each resume
 route), `TestMythosResumeReturnsToItsRecordedLogin`,
@@ -10732,3 +10733,79 @@ without an entry), `TestTagRaces` (a push between a run's look and its push,
 either way round, through a `pre-push` hook; the CI and macOS runs of one
 merge; a name on an unrelated commit) and `TestTheTransitionMerge`, on git
 repositories; `TestDecide`'s carried cases.
+
+## A122. A linked Fable start comes up on a login that is already on a start login, and the hook places by the family start read
+
+**Why.** The Fable store is one login for every Fable session on it. A start
+that switches it to a start login (A105) puts all of them on that account,
+one at its Fable limit included, for as long as the hold lasts, and they
+answer `You've hit your Fable limit` meanwhile. The hold ends after 30 s; a
+large resume reads its login's organization settings later than that, when
+the store has moved on, and comes up without Fable. A session needs a start
+login only to come up on, and one with a link of its own (A109) moves alone
+afterwards, as a Mythos session does (A120): nothing shared has to move for
+it.
+
+Claude Code 2.1.332 names the model in the SessionStart hook's input of an
+interactive session and not in print mode (its keys there, measured on
+2026-11-25: `cwd`, `hook_event_name`, `session_id`, `source`,
+`transcript_path`). A placement that waits for a model leaves a print-mode
+session on the login it came up on: a Mythos one came up on Mythos and its
+request answered `You've hit your weekly limit`.
+
+**The rule** (`selectFableStartLogin`, start's one selection on the Fable
+store). A session needs a start login only to come up on, so a start with a
+link of its own, without `--account`, while start logins are marked and
+auto-switch is on, takes a login that sits on one already:
+
+1. the Fable store, when its account is a start login below its limits by
+   start's ranking (`autoswitch.StartLoginHasRoom`): the session starts on
+   the store;
+2. else the default login, when its current account, verified by its
+   credential and enabled, is one (`defaultIsStartLoginWithRoom`, counted on
+   the 5-hour and weekly windows): the session comes up there, with `Fable
+   store: Account-N is no start login; starting on the default login.` or
+   `Fable store: start login Account-N is at its limit; starting on the
+   default login.`
+
+On both paths `start` switches nothing, holds nothing and writes no state,
+on either store. On the default login it runs no start selection (A105,
+A106) and asks no allocation question, since the session does not stay; the
+hook's placement asks for the login that will serve it. With neither login
+on a start login with room, nothing is there to come up on, and the start
+selects on the Fable store as before, with the switch and the hold. A108's
+and A112's answers come first and are unchanged: no start login in the Fable
+pool, or no Fable room while the default login has some, start on the
+default login through its selection. `--account N` still switches the store
+to N as asked. A start without a link (Windows, a failed link, a command
+that is not native Claude) is as before: nothing would move such a session
+on. The link is created before the selection (`runStart`), so the rule
+applies only when there is one.
+
+**The hook.** `start --started` places every linked session it binds
+(`checkLinkedSession`, logged `by hook`) by the model Claude Code names, else
+by `TYCSWAP_START_FAMILY`, the family `start` read from the launch. That
+family is what `start` placed the session by, so the hook's answer differs
+from `start`'s only where `start` chose a login to come up on: a Fable
+session on the default login goes to the Fable store when the Fable
+placement rule says so (A112), a Mythos session leaves its start login
+(A120). A print-mode session moves there too. With neither a model nor a
+family (a picker or `--continue` without `--model`) the first status-line
+report places it, as before.
+
+**Limits.** With neither the Fable store nor the default login on a start
+login with room, a Fable start still switches and holds the Fable store, for
+every session on it. A session that reads its login's settings after the
+default login has moved to an account whose organization leaves Fable out
+comes up without Fable; the default login moves only at a limit or by hand.
+While the store's account has no Fable room and another pool account has,
+the session stays on the default login until the tick has moved the store.
+
+**Tests** (`cli`, Linux): `TestLinkedFableStartLeavesTheFableStoreAlone`
+(fresh, resume and print mode with another Fable session on the store: no
+switch, no hold and no selection on either login, the hook alone moves the
+session to the store), `TestLinkedFableStartOnAStartLoginsStore`,
+`TestFableStartThatStillMovesTheFableStore` (`--account`, a failed link),
+`TestLinkedFableStartWithoutAStartLoginToComeUpOnIsAsBefore`, and in
+`TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook` the hook without
+a model.

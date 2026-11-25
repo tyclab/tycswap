@@ -198,6 +198,13 @@ func startHoldWanted(snap StartSnapshot, num string, now time.Time) bool {
 	return len(ranked) == 1 && ranked[0].tier == startAtLimit
 }
 
+// StartLoginHasRoom reports whether num ranks below its limits by start's
+// ranking: a session can start on it and stay (DESIGN A122).
+func StartLoginHasRoom(snap StartSnapshot, num string, now time.Time) bool {
+	ranked := rankStartTargets([]string{num}, snap.Entries, snap.Settings, settings.ParseModelNames(snap.Settings.Model), now)
+	return len(ranked) == 1 && ranked[0].tier != startAtLimit
+}
+
 func startNoop(snap StartSnapshot, account string) (StartOutcome, bool) {
 	switch {
 	case account != "" && snap.Current == account && !snap.CurrentDisabled:

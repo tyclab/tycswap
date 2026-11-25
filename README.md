@@ -663,6 +663,15 @@ Fable room but no Fable login and `tycswap fable --login`, which signs them
 in; the status line and the scheduled tick move linked Fable sessions the
 same way.
 
+On Linux and WSL a native Claude session has a link of its own, and its
+start leaves the Fable store, which other Fable sessions run on, as it is
+while a login already sits on a start login with room. That is the store
+itself, or else the default login: the session comes up there (`tycswap
+start: Fable store: Account-9 is no start login; starting on the default
+login.`), nothing is switched or held, and its SessionStart hook moves it to
+the Fable store. With neither on a start login with room, and with
+`--account ID`, the start moves the store as above (DESIGN A122).
+
 Selection is best effort. Missing marks and an already-marked current login
 are silent. An unavailable target or store prints a clear error on stderr,
 then launches once on the current login. An actual switch stamps the engine's
@@ -689,7 +698,8 @@ can hit the limit.
 
 On Linux and WSL, a managed native Claude start gets a private link to its
 selected login. The SessionStart hook above binds the link to the session and
-moves a Mythos session on from its start login.
+moves it on from the login it came up on: a Mythos session from its start
+login, a Fable session from the default login to the Fable store.
 A nested native start gets another link. On a machine with no managed Claude
 accounts, the launcher starts Claude directly.
 

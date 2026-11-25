@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"cmp"
 	"encoding/json"
 	"io"
 	"os"
@@ -19,8 +20,8 @@ import (
 
 // startStarted records the family startFamilyEnv names for the hook's
 // session, so the policy knows a Mythos session before its first status line
-// (DESIGN A106). In a linked session it binds the link and places a resume or
-// a session on a Mythos login as its status line would (A109, A120). It then
+// (DESIGN A106). In a linked session it binds the link and places the session
+// as its status line would (A109, A120, A122). It then
 // releases the start hold startHoldEnv names, if it is still there, and, once
 // no other session is starting, runs one tick of both stores as `auto --once`
 // does: also when the hold had ended, since a session that took longer than
@@ -51,11 +52,11 @@ func startStarted(in io.Reader) {
 			root := paths.GetBackupRoot()
 			if err := reporting.BindSessionLink(root, session, sessionLinkPath, family, scope, time.Now()); err != nil {
 				logging.New(root, false).Warningf("start --started: %v", err)
-			} else if observedModel != "" && (source == "resume" || mythosSessionDir != "") {
-				// A picker or --continue first identifies the session in this hook.
-				// A Mythos session moves on from here, also one that draws no
-				// status line: its client has read its login's settings (DESIGN A120).
-				defer checkLinkedSession(session, observedModel, "hook")
+			} else if model := cmp.Or(observedModel, family); model != "" {
+				// The session moves on from here, also one that draws no status
+				// line: its client has read its login's settings. Claude Code may
+				// name no model; the family is then the one start read (DESIGN A120, A122).
+				defer checkLinkedSession(session, model, "hook")
 			}
 		}
 	} else if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
