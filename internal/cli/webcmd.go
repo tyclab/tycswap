@@ -336,15 +336,11 @@ func dashboardDeps(ctx context.Context, d *dashboard, codexSw *codexswitcher.Swi
 		AutoEvents:   d.auto.Events(),
 		AccountSetup: openAccountSetup,
 		UIPrefs:      uiPrefs{path: appStatePath(sw.BackupDir())},
-		// The live login's email, for the "Add your current login" callout
-		// (A27); the store reads it from Claude Code's config file.
-		CurrentLogin: func() (string, bool) {
-			email, _, ok := sw.GetCurrentAccount()
-			return email, ok && email != ""
-		},
-		Sessions: web.SessionsIn(sw.BackupDir()),
-		Kill:     web.DefaultKill,
-		Interval: time.Duration(interval * float64(time.Second)),
+		CurrentLogin: func() (string, bool) { return currentLogin(sw) },
+		BuildReads:   d.buildReads(ctx, codexSw),
+		Sessions:     web.SessionsIn(sw.BackupDir()),
+		Kill:         web.DefaultKill,
+		Interval:     time.Duration(interval * float64(time.Second)),
 		Logger: func(m string) {
 			if debug {
 				fmt.Fprintln(s.err, m)
@@ -352,6 +348,13 @@ func dashboardDeps(ctx context.Context, d *dashboard, codexSw *codexswitcher.Swi
 		},
 		ActionLog: sw.Log.Action,
 	}
+}
+
+// currentLogin is the live login's email, for the "Add your current login"
+// callout (A27); the store reads it from Claude Code's config file.
+func currentLogin(sw *core.Switcher) (string, bool) {
+	email, _, ok := sw.GetCurrentAccount()
+	return email, ok && email != ""
 }
 
 func renderWebHelp(prog string, out io.Writer) int {
