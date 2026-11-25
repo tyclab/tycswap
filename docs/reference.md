@@ -1576,6 +1576,23 @@ tycswap start --check
 `--account ID` to choose a specific independent login. **Start Mythos session…**
 in the terminal menu offers the ready accounts.
 
+On Linux and WSL a linked Mythos start, fresh or a resume (`--resume`, the
+picker, `--continue`, `--fork-session`, `--from-pr`), begins on a start
+login: while auto-switch is on and the login it would get (the ranked choice
+with room, for a resume its recorded login) is no start login, it takes the
+best start login with room (`Starting on start login Account-N.`), else,
+while another ready Mythos login has room and asks no allocation question,
+one at its limit, the selected login if it is one (`Starting on start login
+Account-N, which is at its limit; auto-switch moves the session to a Mythos
+login with room once it is up.`). A resume whose recorded login has room does so with auto-switch off
+too. `--account` of a start login at its limit starts there while another
+login has room, with auto-switch off too (`…, which is at its limit.`). A
+start login allocated away from Mythos is not taken; a resume recorded on a
+start login starts there. The session's SessionStart hook moves it on, also
+in print mode: a resume to its recorded login while that has room, else to
+the selected login with room. Nothing moves it before that hook
+(DESIGN A119).
+
 `start --next mythos` requests Mythos for the next bare native Claude start on
 this box on Linux, WSL or Windows. On macOS the control reports that independent
 starts are unavailable. An explicit model, resume, or command with arguments leaves the request
@@ -1638,8 +1655,9 @@ Marks are managed independently of these launch-only overrides.
 
 Without an override, an explicit UUID resume of a session recorded on an
 independently enrolled login uses that same identity, including after a
-native model change. If the recorded login is disabled or removed, the
-resume stops. A one-time allocation question names the model being resumed
+native model change; on Linux and WSL a Mythos resume may begin on a start
+login and return to it at its SessionStart hook (A119). If the recorded
+login is disabled or removed, the resume stops. A one-time allocation question names the model being resumed
 or explicitly requested. Other starts pick the credential store by model
 family. The settings it reads are, in this order, the `--settings`
 value (`--settings X` or `--settings=X`, the last one: JSON when it starts

@@ -43,6 +43,9 @@ var errNoMythosLogin = errors.New("no enabled, marked account with an independen
 
 type mythosPlacement struct {
 	dir, number, name, allocation string
+	// notice is start's line for a start on a start login, seed the login it
+	// records as the selection when there is none (DESIGN A119).
+	notice, seed string
 }
 
 var askPlacement = func(streams ioStreams, question, detail string, printMode bool) (bool, error) {
@@ -88,6 +91,8 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 	return locateStartMythos(root, model, account, session, runtime.GOOS == "linux")
 }
 
+// locateStartMythos is a Mythos start's login. A linked start, fresh or a
+// resume, begins on a start login (DESIGN A119).
 func locateStartMythos(root, model, account, session string, linked bool) (mythosPlacement, error) {
 	var scope string
 	if sessionUUID.MatchString(session) {
@@ -132,11 +137,11 @@ func locateStartMythos(root, model, account, session string, linked bool) (mytho
 		return mythosPlacement{}, err
 	}
 	selected := ""
-	if linked && account == "" && bound == "" {
+	if linked && account == "" {
 		// The link creator reports a damaged selection and falls back to this direct placement.
 		selected, _ = store.SelectedMythosDigest(root)
 	}
-	return chooseMythosLogin(view, model, mythosLoginRequest{account: account, bound: bound, selected: selected, start: true}, set)
+	return chooseMythosLogin(view, model, mythosLoginRequest{account: account, bound: bound, selected: selected, start: true, startLogins: linked}, set)
 }
 
 func mythosMovePlacement(view *store.Store) (mythosPlacement, error) {
@@ -202,6 +207,8 @@ func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoS
 type mythosLoginRequest struct {
 	account, bound, source, selected string
 	start                            bool
+	// startLogins: a linked start, which begins on a start login (DESIGN A119).
+	startLogins bool
 }
 
 func chooseMythosLogin(view *store.Store, model string, req mythosLoginRequest, set settings.AutoSwitchSettings) (mythosPlacement, error) {
@@ -216,25 +223,31 @@ func chooseMythosLogin(view *store.Store, model string, req mythosLoginRequest, 
 		}
 	}
 	var sourceNumber string
-	var candidates []string
+	// logins are the ready logins; candidates those the request allows.
+	var logins, candidates []string
 	placements := map[string]mythosPlacement{}
 	ids := map[string]usage.Identity{}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		dir, ready := view.MythosLoginReady(data, num)
-		if ready && (req.account == "" || req.account == num) && (req.bound == "" || filepath.Base(dir) == req.bound) {
+		allowed := (req.account == "" || req.account == num) && (req.bound == "" || filepath.Base(dir) == req.bound)
+		if !ready || !allowed && !req.startLogins {
+			continue
+		}
+		logins = append(logins, num)
+		if allowed {
 			candidates = append(candidates, num)
 			if dir == req.source {
 				sourceNumber = num
 			}
-			placement := mythosPlacement{dir: dir, number: num, name: store.AccountNameFrom(data, num)}
-			if models, explicit := store.ModelsFrom(data, num); explicit && !slices.Contains(models, model) {
-				placement.allocation = strings.Join(models, ", ")
-			}
-			placements[num] = placement
-			_, email, org, _ := view.ResolveAccountFrom(data, num)
-			ids[num] = usage.Identity{Email: email, OrgUUID: org}
 		}
+		placement := mythosPlacement{dir: dir, number: num, name: store.AccountNameFrom(data, num)}
+		if models, explicit := store.ModelsFrom(data, num); explicit && !slices.Contains(models, model) {
+			placement.allocation = strings.Join(models, ", ")
+		}
+		placements[num] = placement
+		_, email, org, _ := view.ResolveAccountFrom(data, num)
+		ids[num] = usage.Identity{Email: email, OrgUUID: org}
 	}
 	if len(candidates) == 0 {
 		if req.bound != "" {
@@ -264,6 +277,22 @@ func chooseMythosLogin(view *store.Store, model string, req mythosLoginRequest, 
 		}
 	}
 	ranked := rank(candidates, entries, set, model, now)
+	var choice mythosPlacement
+	if len(ranked) > 0 {
+		choice = rankedMythosChoice(view, req, ranked, placements, set)
+	}
+	if req.startLogins {
+		room, would := ranked, choice.number
+		if req.account != "" || req.bound != "" {
+			room = selectedFirst(autoswitch.InitialPlacementTargets(logins, entries, set, model, now), placements, req.selected)
+		}
+		if req.bound != "" {
+			would = candidates[0]
+		}
+		if login, ok := startLoginInstead(data, req, logins, ranked, room, would, placements, set); ok {
+			return login, nil
+		}
+	}
 	if len(ranked) == 0 {
 		err := fmt.Errorf("%w for %s", errNoMythosQuota, model)
 		if req.start {
@@ -273,27 +302,103 @@ func chooseMythosLogin(view *store.Store, model string, req mythosLoginRequest, 
 		}
 		return mythosPlacement{}, err
 	}
-	if req.selected != "" {
-		if preferred := slices.IndexFunc(ranked, func(num string) bool { return filepath.Base(placements[num].dir) == req.selected }); preferred > 0 {
-			num := ranked[preferred]
-			copy(ranked[1:], ranked[:preferred])
-			ranked[0] = num
-		}
-	}
+	return choice, nil
+}
+
+// rankedMythosChoice is the login with room the ranking chooses: the selected
+// one first, then the best ranked without an allocation question.
+func rankedMythosChoice(view *store.Store, req mythosLoginRequest, ranked []string, placements map[string]mythosPlacement, set settings.AutoSwitchSettings) mythosPlacement {
+	selectedFirst(ranked, placements, req.selected)
 	// A hand-selected account with room is the start target, including when
 	// the existing allocation question must be answered before launch.
 	if req.selected != "" && req.source == "" && filepath.Base(placements[ranked[0]].dir) == req.selected && placements[ranked[0]].allocation != "" {
 		hand, _ := mythosHandSelection(view, set, true)
 		if hand == ranked[0] {
-			return placements[hand], nil
+			return placements[hand]
 		}
 	}
 	for _, num := range ranked {
 		if placements[num].allocation == "" {
-			return placements[num], nil
+			return placements[num]
 		}
 	}
-	return placements[ranked[0]], nil
+	return placements[ranked[0]]
+}
+
+// selectedFirst moves the selected login to the front of ranked, in place.
+func selectedFirst(ranked []string, placements map[string]mythosPlacement, selected string) []string {
+	if selected != "" {
+		if preferred := slices.IndexFunc(ranked, func(num string) bool { return filepath.Base(placements[num].dir) == selected }); preferred > 0 {
+			num := ranked[preferred]
+			copy(ranked[1:], ranked[:preferred])
+			ranked[0] = num
+		}
+	}
+	return ranked
+}
+
+// startLoginInstead is the start login a linked Mythos start takes instead of
+// would, the login it would get ("" for none): the ranked choice with room,
+// for a resume the recorded login. It returns the start's notice; false keeps
+// the start as it was (DESIGN A119). A start login is a ready Mythos login
+// marked as a start login and not allocated away from Mythos. ranked is the
+// requested logins with room, room all ready logins with room, both ranked.
+//
+// Without an account, when would is no start login, the start takes the best
+// ranked start login with room, else one at its limit while another login has
+// room: the selected Mythos login if it is one, else the first in sequence
+// order. That needs auto-switch on, except for a resume whose recorded login
+// has room: the session returns there by itself. With an account, only that
+// account, when it is a start login at its limit and another login has room;
+// also with auto-switch off, as A105 takes an explicit start login at its
+// limit. A start login at its limit needs a login with room that asks no
+// allocation question, which a move would wait for. The start seeds the
+// selection with would, not the start login.
+func startLoginInstead(data *store.SequenceData, req mythosLoginRequest, logins, ranked, room []string, would string, placements map[string]mythosPlacement, set settings.AutoSwitchSettings) (mythosPlacement, bool) {
+	isStart := func(num string) bool { return store.StartLoginFrom(data, num) && placements[num].allocation == "" }
+	free := slices.ContainsFunc(room, func(num string) bool { return placements[num].allocation == "" })
+	atLimit := func(num string) mythosPlacement {
+		login := placements[num]
+		login.notice = "Starting on start login Account-" + num + ", which is at its limit"
+		if set.Enabled {
+			login.notice += "; auto-switch moves the session to a Mythos login with room once it is up"
+		}
+		login.notice += "."
+		return login
+	}
+	if req.account != "" {
+		if !isStart(req.account) || len(ranked) > 0 || !free {
+			return mythosPlacement{}, false
+		}
+		return atLimit(req.account), true
+	}
+	returns := req.bound != "" && len(ranked) > 0
+	if would == "" || store.StartLoginFrom(data, would) || !set.Enabled && !returns {
+		return mythosPlacement{}, false
+	}
+	for _, num := range room {
+		if isStart(num) {
+			login := placements[num]
+			login.notice, login.seed = "Starting on start login Account-"+num+".", placements[would].dir
+			return login, true
+		}
+	}
+	var spent []string
+	for _, num := range logins {
+		if isStart(num) && !slices.Contains(room, num) {
+			spent = append(spent, num)
+		}
+	}
+	if len(spent) == 0 || !free {
+		return mythosPlacement{}, false
+	}
+	i := slices.IndexFunc(spent, func(num string) bool { return filepath.Base(placements[num].dir) == req.selected })
+	if req.selected == "" || i < 0 {
+		i = 0
+	}
+	login := atLimit(spent[i])
+	login.seed = placements[would].dir
+	return login, true
 }
 
 func firstMythosReturn(candidates []string, entries map[string]usage.UsageEntry, model string, now time.Time) (string, time.Time) {

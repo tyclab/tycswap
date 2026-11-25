@@ -16,8 +16,10 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/launch"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -189,7 +191,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 	storeDir := filepath.Clean(paths.FableStoreDir(root))
 	env = withStartVar(env, recoveredFableEnv, "")
 	childEnv, hold, family := env, "", ""
-	var link string
+	var link, startLoginNotice string
 	native := launch.IsClaudeCommand(bin)
 	override := startOverride(env, parsed.command, storeDir)
 	var next store.NextStartRequest
@@ -265,13 +267,22 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			var placement mythosPlacement
 			placement, err = selectStart(linked && linkErr == nil, mythosPlacement{})
 			if err == nil && placement.dir != "" && linked && linkErr == nil {
-				link, linkErr = reporting.CreateSessionLink(root, placement.dir)
-				if linkErr != nil && savedTarget == "" && parsed.account == "" {
-					// A direct launch uses the original ranking. Keep consent only for the exact proposal.
+				if placement.seed != "" {
+					// The link would seed the selection with the start login (DESIGN A119).
+					linkErr = filelock.New(filepath.Join(root, ".lock"), filelock.DefaultTimeout).With(func() error {
+						return store.SeedMythosSelection(root, placement.seed)
+					})
+				}
+				if linkErr == nil {
+					link, linkErr = reporting.CreateSessionLink(root, placement.dir)
+				}
+				if linkErr != nil && (placement.notice != "" || savedTarget == "" && parsed.account == "") {
+					// A direct launch uses the original ranking, never a start login
+					// (DESIGN A119). Keep consent only for the exact proposal.
 					placement, err = selectStart(false, placement)
 				}
 			}
-			dir = placement.dir
+			dir, startLoginNotice = placement.dir, placement.notice
 		} else if !native {
 			model = ""
 		}
@@ -332,6 +343,10 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			// The observed request is no longer available. Start without it.
 			return runStart(bin, parsed, selectedDir, env, streams, false)
 		}
+	}
+	if startLoginNotice != "" {
+		line := startNotice(streams.err, startLoginNotice)
+		logging.New(root, false).Infof("start: %s", line)
 	}
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)

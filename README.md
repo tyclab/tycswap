@@ -752,7 +752,14 @@ tycswap models 2 mythos,fable
 
 The browser sign-in must match the enrolled account and organization.
 Each enrolled identity has its own credential directory. A new Mythos
-session starts Claude with the selected directory. The native client
+session starts Claude with the selected directory. On Linux and WSL, with
+start logins marked (`tycswap start --allow ID`) and auto-switch on, a Mythos
+session, fresh or a resume, starts on a start login's Mythos login instead,
+even one at its limit while another Mythos login has room (a resume whose
+recorded login has room also with auto-switch off). Its SessionStart hook
+moves it on, in print mode too: a resume to its recorded login while that
+has room, else to the selected login. Claude Code reads its login's
+organization settings as it comes up (DESIGN A119). The native client
 checks model access on that login. In-process subagents share their
 parent session's login. Removing the account also removes its independent
 credential. Moving the same account to a new slot preserves the credential.

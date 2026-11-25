@@ -10246,3 +10246,176 @@ file); in `reporting`, `TestAStoreKeptFromTheGuardTakesTheStoreLockAfterIt`.
 They wait on what a goroutine is doing, read from the goroutine dump
 (`testutil.Parked`), never on a duration. The reproduction took 60.4 s
 before and 0.08 to 0.11 s after, on a box at a load of about 100.
+
+## A119. A Mythos start begins on a start login and leaves it at its SessionStart hook
+
+**Why.** The operator on 2026-11-25 asked that a Mythos session start on
+his start login's account and then use another organization's quota ("this
+design was working", "start login exists only for that reason so why not
+working"). On his box (0.23.3) start logins 3, 4, 7, 8, 11
+and 12 were marked; accounts 8 (a start login, its Mythos login at its weekly
+and Fable limit) and 10 (no start login, room) had Mythos logins, and 10 was
+the selected one. Four Mythos starts from 18:13 to 18:15 CET linked straight
+to 10's Mythos login. Claude Code loads its login's organization settings as
+it comes up; that organization's `availableModels` names Opus, Sonnet and
+Haiku only, so each session came up as Opus and the status line moved it to
+the default login. Mythos never ran. `chooseMythosLogin` ranked only Mythos
+logins with room (`autoswitch.InitialPlacementTargets`) and knew no start
+login. Before 0.20.0 Mythos ran on the shared default login, so it started on
+start login 8 under A105 and moved to 10 after; a running Mythos session on 10
+answered on 2026-11-20. A first fix took start logins for fresh starts only.
+Asked to check it ("investigate this is really propper fixed"), the review
+measured the resume and print-mode faults below.
+
+**Measured** on the operator's WSL box, Claude Code 2.1.332, tycswap 0.23.3 hooks and
+status line, 2026-11-25, one run each:
+
+1. A fresh start on the first fix: `tycswap start --mythos` linked to 8's
+   Mythos login (19:08:05.18 CET), the SessionStart hook bound the link at
+   19:08:06.51 and the status line moved it to 10's at 19:08:06.88. The client
+   showed Mythos 5.2 and `claude-mythos-5-2` answered.
+2. Its resume, `tycswap start -- claude --model claude-mythos-5-2 --resume
+   <id>`, linked straight to 10's Mythos login, the session's recorded login.
+   The client said `Model "claude-mythos-5-2" is restricted by your
+   organization's settings. Using claude-opus-5-5 instead.`, and the status
+   line moved it to the default login at 19:09:46.60. After its first move a
+   Mythos session's recorded login is the login with room, so every resume
+   lost Mythos.
+3. Without tycswap, a private link to 8's Mythos login that a SessionStart
+   hook re-pointed to 10's, 0.7 s after launch: in print mode (`claude -p
+   --model claude-mythos-5-2`) init and answer on `claude-mythos-5-2`, exit 0;
+   interactive, Mythos 5.2 and an answer. The client has read its login's
+   organization settings before SessionStart runs, so a move at the hook
+   keeps Mythos. The cached settings in `~/.claude/remote-settings.json`, in
+   the config folder all sessions share, are signed for one organization and
+   account; a session on another login ignores them.
+
+**The rule** (`startLoginInstead`, asked by `chooseMythosLogin`, the one
+selection of a Mythos start's login). A start login here is a ready Mythos
+login whose account is marked as a start login (`store.StartLoginFrom`) and
+not allocated away from Mythos: an allocation question for seconds of use is
+asked of nobody. It applies to every linked start (`locateStartMythos` with a
+session link): `start --mythos`, a launcher start with `--model
+claude-mythos-5-2`, a bare start with next start Mythos, and the resumes
+placed on a Mythos login: `--resume ID` with or without `--model`, with or
+without a recorded login, and the picker, `--continue`, `--fork-session` and
+`--from-pr` with Mythos named. The login the start would get is the ranked
+choice with room, for a resume with a recorded Mythos login that login, room
+or not. When it is no start login the start takes:
+
+1. the best ranked start login with room, in the ranking's order (the
+   selected login first); notice `Starting on start login Account-N.`;
+2. else, while at least one ready Mythos login has room and asks no
+   allocation question, a start login at its limit: the selected Mythos login
+   if it is one, else the first in sequence order; notice `Starting on start
+   login Account-N, which is at its limit; auto-switch moves the session to a
+   Mythos login with room once it is up.`
+
+That needs auto-switch on, except for a resume whose recorded login has room
+(below). `--account N` keeps its meaning, but a start login at its limit is
+not refused while another ready Mythos login has room and asks no allocation
+question: the start takes it with the second notice. The notice goes to
+stderr and, as `start: <line>`, to `tycswap.log`, after the next-start claim
+and before the launch. A start on a start login seeds an empty Mythos
+selection with the login it would have got, before its link (which would
+seed it with the start login), so the hook moves the session there. A resume
+whose recorded login has no room was refused before; it now starts on a start
+login when one has room or another login has. No change: no Mythos login is
+a start login, or none is marked; an `--account` that is no start login; a
+resume whose recorded login is a start login (started there, refused while it
+is at its limit); no ready Mythos login has room, fresh or a resume with a
+recorded login (the refusal and its `returns` text); the only logins with
+room ask an allocation question (it is asked before the launch, as before);
+direct launches (Windows, a failed link, which ranks again without the rule):
+nothing would move such a session on.
+
+**Leaving the start login.** The SessionStart hook (`start --started`) binds
+the link and then places the session as its status line would at a report
+(`checkLinkedSession`, logged `by hook`): a resume always (A109), and now any
+session on a Mythos login, also a fresh one, whenever the client names its
+model. A resume goes back to its recorded login: `bindSessionLink` records it
+as `resumeMythos` when the link's target differs, and `sessionDestination`
+takes it while it has room. Otherwise the session moves as any linked Mythos
+session (`mythosTickPlacement`): to the selected login when it has known room,
+else to the best login with known room, else it stays. A session that draws
+no status line (print mode) thus leaves its start login at its hook; when no
+login had known room then, the tick moves it later. When the hook names no
+model, the status line's first report places it. A resume that ended before
+it got back keeps its recorded login: `SessionBinding` names `resumeMythos`
+before the store it ended on, so the next resume is placed by that login, not
+as one recorded on the start login. Once back, it is a linked Mythos session
+like any other: a report or tick moves it to the selected login when that
+differs and has known room, as a resume placed on its recorded login was
+moved before.
+
+**No gate.** The first fix held each session on its start login until a
+status line had observed it (`awaitsMythosReport` on `observePending`). Fact
+3 shows the hook is late enough, and a print-mode session never clears
+`observePending`, so the gate is gone. Nothing moves a session before its
+hook: until the hook binds the link no session record names it, and every
+move goes through `MoveSessionLink`, which finds a link by its record. Where
+each path can first move a Mythos session on a start login:
+
+- its own SessionStart hook: at once, as above; the first move;
+- the status line (`auto --observe`, and `start --check`): its own session at
+  each report, after the hook; without a hook binding, its A109 repair binds
+  the link first;
+- the quota hook and the timer (`auto --once`), the `tycswap auto` loop and
+  another session's held `--started` or status-line tick: the Mythos tick
+  over `LinkedSessions`, the records of live sessions, so from the binding on;
+- `switch --store mythos` / **Use for Mythos**: the linked Mythos sessions,
+  from the binding on;
+- `tycswap use` and the dashboard's move of one session: explicit, by the
+  session's binding;
+- the dashboard's tick: its hosted engine is the default store's engine only
+  and moves no link.
+
+**Auto-switch off** mirrors A105 for a fresh start: a default start with
+auto-switch off takes no start login at all, and an explicit `--account` at
+its limit is taken as asked with the plain notice, since nothing would move
+the session on. So without `--account` a fresh Mythos start keeps its ranked
+choice, and with an `--account` start login at its limit it starts there
+with `Starting on start login Account-N, which is at its limit.`, no promise
+of a move. A resume whose recorded login has room takes a start login with
+auto-switch off too, one at its limit with that plain notice: its return to
+the recorded login is the resume binding at its hook, not auto-switch. A resume whose recorded
+login has no room, and one without a recorded login, keep their ranked choice
+or refusal, as a fresh start does.
+
+**What the surfaces predict.** `start --check`, the dashboard and the tray
+name no login for the next start (only *Next start: Mythos*); nothing to align.
+
+**Limits.** Remote Control fails to connect on a start whose login moves
+while it connects (`Remote Control disconnected — Session creation failed
+(server 400)`, on each start measured above); `/remote-control` connects it.
+A login whose room is unknown counts as room for the start but not for the
+move, which waits for a reading. So when no login has known room at its hook,
+a print-mode session on a start login at its limit sends its requests there
+until a tick moves it; a short run ends first. A hook that names no model
+leaves a print-mode session on its start login. A fresh session that ends on
+its start login before any move is recorded there, so its next resume is one
+whose recorded login is a start login.
+
+**Tests.** In `cli`, on Linux, no status line unless named:
+`TestMythosResumeBeginsOnAStartLogin` (each resume route above: the link on
+the start login with the notice, the hook moves it to the login with room; its
+first case, as the standalone test of `--resume ID --model` on a session
+recorded on the unmarked login with room, failed before with the link on that
+login), `TestMythosResumeReturnsToItsRecordedLogin` (back to the recorded
+login, not the selected one; the recorded login without room: on to the
+selected one; a resume that ended on the start login before its return:
+placed by its recorded login, refused before; auto-switch off),
+`TestMythosPrintModeSessionLeavesItsStartLogin` (the hook alone moves it; the
+tick once a login has room),
+`TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook` (two ticks and
+Use for Mythos leave it before its hook; the hook moves it and logs the move;
+a hook without a model leaves the move to the status line),
+`TestMythosStartBeginsOnAStartLoginAtItsLimit` (the three fresh routes),
+`TestMythosStartLoginExplicitAccount`,
+`TestMythosStartWithoutAStartLoginChangeIsAsBefore` (the unchanged cases
+above; its recorded resume without room anywhere and its allocated-only room
+each took the start login at its limit before),
+`TestMythosStartLoginSeedsTheSelectionWithItsRankedChoice` (it seeded the
+start login before, and the session stayed there),
+`TestMythosStartWithAFailedLinkTakesNoStartLogin` (fresh and resume) and
+`TestMythosStartTakesAStartLoginWithRoomFirst`.
