@@ -10449,3 +10449,88 @@ against an in-memory GitHub. In `update`:
 `TestDownloadUpgrade_MacOSBuildNotPublishedYet`. What only GitHub can show
 (the triggers, the token's push, a rerun's completion event) is checked on the
 first release.
+
+## A120. A Mythos session starts on a start login and moves on at its SessionStart hook
+
+**Why.** Claude Code reads its login's organization settings, `availableModels`
+among them, as it comes up and before its SessionStart hook runs (Claude Code
+2.1.332, 2026-11-25). A session that comes up on a login whose organization
+leaves Mythos out runs Opus instead (`Model "claude-mythos-5-2" is restricted
+by your organization's settings`). A session that came up on Mythos keeps it
+when its login moves to such an organization afterwards, at the hook or
+later, in print mode too. So a Mythos session starts on a start login (A105)
+and takes its quota from the selected Mythos login once it is up.
+
+**The rule** (`startLoginInstead`, in `chooseMythosLogin`). It applies to
+every linked Mythos start (`locateStartMythos` with a session link):
+`start --mythos`, a launcher start with `--model claude-mythos-5-2`, a bare
+start with next start Mythos, and a resume on a Mythos login (`--resume ID`
+with or without a recorded login, the picker, `--continue`,
+`--fork-session`, `--from-pr`). A start login is a ready Mythos login whose
+account is marked (`store.StartLoginFrom`) and not allocated away from
+Mythos. When the login the start would get, the ranked choice with room or
+for a resume its recorded login, is no start login, the start takes:
+
+1. the best ranked start login with room, the selected one first; notice
+   `Starting on start login Account-N.`;
+2. else, while a login with room asks no allocation question, a start login
+   at its limit: the selected login if it is one, else the first in sequence
+   order; notice `Starting on start login Account-N, which is at its limit;
+   auto-switch moves the session to a Mythos login with room once it is up.`
+
+The notice goes to stderr and, as `start: <line>`, to `tycswap.log`.
+`--account N` of a start login at its limit starts there on the same
+condition. A start on a start login seeds an empty Mythos selection with the
+login it would have got. The rule does not apply when no Mythos login is a
+start login, to an `--account` that is no start login, to a resume recorded
+on a start login, when no login has room (the refusal names the first
+return), when only logins with an allocation question have room (the
+question comes before the launch), or to a direct launch (Windows, a failed
+link), which nothing would move on.
+
+**Auto-switch off** follows A105: a fresh start keeps its ranked choice, and
+`--account` of a start login at its limit starts there with `Starting on
+start login Account-N, which is at its limit.` A resume whose recorded login
+has room still takes a start login: its return there is the resume binding,
+not auto-switch.
+
+**Moving on.** The SessionStart hook binds the link and, when Claude Code
+names its model, places the session as its status line would
+(`checkLinkedSession`, logged `by hook`). A resume returns to its recorded
+login (`resumeMythos`, set by `bindSessionLink`) while that has room. Any
+other session moves as a linked Mythos session (`mythosTickPlacement`): to
+the selected login with known room, else to the best with known room, else
+it stays and a tick moves it later. A print-mode session, which draws no
+status line, moves the same way. Without a model the first status-line
+report places it. `SessionBinding` names an unreached `resumeMythos` before
+the store a session ended on, so the next resume is placed by its recorded
+login. Once moved, a report or tick moves the session to the selected login
+when that differs and has known room, as for any linked Mythos session.
+
+Until the hook binds a link, no session record names it, and every move goes
+through `MoveSessionLink`, which finds a link by its record. The tick, the
+quota hook, the timer, the `auto` loop, another session's held `--started`
+or status line, Use for Mythos, `tycswap use` and the dashboard move a
+session from its binding on; the dashboard's tick moves no link.
+
+**Surfaces.** `start --check`, the dashboard and the tray name no login for
+the next start.
+
+**Limits.** Remote Control fails to connect on a start whose login moves
+while it connects (`Session creation failed (server 400)`); `/remote-control`
+connects it. A login whose room is unknown counts as room for the start but
+not for the move: with no known room at the hook, a print-mode session on a
+start login at its limit sends its requests there until a tick moves it. A
+hook without a model leaves a print-mode session on its start login. A fresh
+session that ends on its start login before any move is recorded there.
+
+**Tests** (`cli`, Linux): `TestMythosResumeBeginsOnAStartLogin` (each resume
+route), `TestMythosResumeReturnsToItsRecordedLogin`,
+`TestMythosPrintModeSessionLeavesItsStartLogin` (no status line),
+`TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook`,
+`TestMythosStartBeginsOnAStartLoginAtItsLimit`,
+`TestMythosStartLoginExplicitAccount`,
+`TestMythosStartWithoutAStartLoginChangeIsAsBefore`,
+`TestMythosStartLoginSeedsTheSelectionWithItsRankedChoice`,
+`TestMythosStartWithAFailedLinkTakesNoStartLogin` and
+`TestMythosStartTakesAStartLoginWithRoomFirst`.
