@@ -46,7 +46,7 @@ func TestBackgroundStartsAppInBackground(t *testing.T) {
 	var gotExe, gotLog string
 	stubBackground(t, func(exe, logPath string) (backgroundApp, error) {
 		gotExe, gotLog = exe, logPath
-		lock, held, err := acquireAppLock() // what `app` does first
+		lock, held, err := heldElsewhere(acquireAppLock) // what `app` does first
 		if err != nil || !held {
 			t.Fatalf("child lock = %v, %v", held, err)
 		}
@@ -68,7 +68,7 @@ func TestBackgroundStartsAppInBackground(t *testing.T) {
 // Starting the tray again does not create a second instance.
 func TestBackgroundWhenAppAlreadyRuns(t *testing.T) {
 	appLockHome(t)
-	lock, held, err := acquireAppLock()
+	lock, held, err := heldElsewhere(acquireAppLock)
 	if err != nil || !held {
 		t.Fatalf("acquire = %v, %v", held, err)
 	}

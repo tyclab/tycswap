@@ -6,6 +6,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestStatusAndListReportABusyStoreLock: a roster that still needs the org
@@ -16,11 +17,7 @@ func TestStatusAndListReportABusyStoreLock(t *testing.T) {
 	s := newStore(t, nil, nil)
 	writeSequenceRaw(t, s, `{"activeAccountNumber":1,"lastUpdated":"x","sequence":[1],"accounts":{"1":{"email":"a@example.com"}}}`)
 	writeLiveConfig(t, s, "a@example.com", "")
-	holder := filelock.New(s.LockFile, time.Second)
-	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
-		t.Fatalf("acquire: %v %v", ok, err)
-	}
-	defer holder.Release()
+	defer testutil.HoldLock(t, s.LockFile)()
 	s.Lock = filelock.New(s.LockFile, 100*time.Millisecond)
 
 	for _, jsonOut := range []bool{true, false} {

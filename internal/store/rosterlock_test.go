@@ -23,9 +23,17 @@ func TestWithRosterLockedHoldsTheLockAcrossTheRead(t *testing.T) {
 		if data == nil {
 			t.Fatal("fn was handed no roster")
 		}
+		// Another tycswap asks on a goroutine of its own: this one asking
+		// for the lock it holds would be a nesting (DESIGN A118).
 		rival := filelock.New(s.LockFile, 200*time.Millisecond)
-		ok, aerr := rival.Acquire(200 * time.Millisecond)
-		if aerr != nil {
+		asked := make(chan error)
+		var ok bool
+		go func() {
+			var err error
+			ok, err = rival.Acquire(200 * time.Millisecond)
+			asked <- err
+		}()
+		if aerr := <-asked; aerr != nil {
 			t.Fatalf("rival acquire: %v", aerr)
 		}
 		if ok {

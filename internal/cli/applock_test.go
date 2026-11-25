@@ -7,9 +7,39 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
+
+// heldElsewhere takes a lock as another process holds it: acquire runs on a
+// goroutine of its own, so the test's own request for that lock is no
+// nesting (DESIGN A118).
+func heldElsewhere(acquire func() (*filelock.FileLock, bool, error)) (*filelock.FileLock, bool, error) {
+	type taken struct {
+		lock *filelock.FileLock
+		held bool
+		err  error
+	}
+	got := make(chan taken)
+	go func() {
+		lock, held, err := acquire()
+		got <- taken{lock, held, err}
+	}()
+	t := <-got
+	return t.lock, t.held, t.err
+}
+
+// acquireElsewhere is l.Acquire(timeout) on a goroutine of its own, as
+// another process would ask for a lock this test's goroutine holds.
+func acquireElsewhere(l *filelock.FileLock, timeout time.Duration) (bool, error) {
+	_, ok, err := heldElsewhere(func() (*filelock.FileLock, bool, error) {
+		ok, err := l.Acquire(timeout)
+		return l, ok, err
+	})
+	return ok, err
+}
 
 // appLockHome points the backup root at a temp dir so the lock file is ours.
 func appLockHome(t *testing.T) string {
@@ -30,7 +60,7 @@ func TestAppLockIsExclusive(t *testing.T) {
 	if appIsRunning() {
 		t.Fatal("no app has the lock yet")
 	}
-	lock, got, err := acquireAppLock()
+	lock, got, err := heldElsewhere(acquireAppLock)
 	if err != nil || !got {
 		t.Fatalf("first acquire = %v, %v", got, err)
 	}
@@ -61,7 +91,7 @@ func TestAppLockIsExclusive(t *testing.T) {
 // running tray (A38).
 func TestPurgeRefusedWhileAppRuns(t *testing.T) {
 	appTestHome(t)
-	lock, got, err := acquireAppLock()
+	lock, got, err := heldElsewhere(acquireAppLock)
 	if err != nil || !got {
 		t.Fatalf("acquire = %v, %v", got, err)
 	}
@@ -100,7 +130,7 @@ func TestPurgeCreatesNoLock(t *testing.T) {
 // or a dashboard.
 func TestSecondAppRefusesToStart(t *testing.T) {
 	appLockHome(t)
-	lock, got, err := acquireAppLock()
+	lock, got, err := heldElsewhere(acquireAppLock)
 	if err != nil || !got {
 		t.Fatalf("acquire = %v, %v", got, err)
 	}

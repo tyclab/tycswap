@@ -17,8 +17,9 @@ import (
 )
 
 // rivalLock is another tycswap's handle on the import write lock: a DISTINCT
-// FileLock object on the same path, so contention resolves at the flock level
-// (what two processes do) rather than on an in-process mutex.
+// FileLock object on the same path, taken on a goroutine of its own, so
+// contention resolves at the flock level (what two processes do) rather than
+// on an in-process mutex, and is no nesting of the test's (DESIGN A118).
 type rivalLock struct{ l *filelock.FileLock }
 
 func newRivalLock(path string) *rivalLock {
@@ -26,8 +27,12 @@ func newRivalLock(path string) *rivalLock {
 }
 
 func (r *rivalLock) tryAcquire() bool {
-	ok, err := r.l.Acquire(200 * time.Millisecond)
-	return err == nil && ok
+	got := make(chan bool)
+	go func() {
+		ok, err := r.l.Acquire(200 * time.Millisecond)
+		got <- err == nil && ok
+	}()
+	return <-got
 }
 
 func (r *rivalLock) release() { _ = r.l.Release() }

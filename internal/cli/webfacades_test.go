@@ -971,8 +971,18 @@ func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 	// The same store through a switcher that waits 50 ms for the lock.
 	ops = newCodexOps(codexswitcher.New(codexswitcher.Options{Platform: platform.Linux, Stdout: io.Discard, LockTimeout: 50 * time.Millisecond}))
 	held := testStore().Lock()
-	if ok, err := held.Acquire(time.Second); !ok || err != nil {
-		t.Fatalf("cannot take the lock: %v %v", ok, err)
+	// Taken as another process holds it: these calls asking for it on the
+	// goroutine that took it would be a nesting (DESIGN A118).
+	took := make(chan error)
+	go func() {
+		ok, err := held.Acquire(time.Second)
+		if err == nil && !ok {
+			err = errors.New("the lock is busy")
+		}
+		took <- err
+	}()
+	if err := <-took; err != nil {
+		t.Fatalf("cannot take the lock: %v", err)
 	}
 	defer func() { _ = held.Release() }()
 	var ce *cerr.Error

@@ -290,7 +290,7 @@ func TestMigrateAutoSwitchChoice(t *testing.T) {
 		t.Cleanup(func() { seedEnabled = prev })
 		seedEnabled = func(root string) (bool, error) {
 			other := filelock.New(filepath.Join(root, prefsLockFilename), 0)
-			if got, err := other.Acquire(time.Millisecond); err != nil || got {
+			if got, err := acquireElsewhere(other, time.Millisecond); err != nil || got {
 				_ = other.Release()
 				t.Errorf("another holder got .ui_prefs.lock during the seed (err %v)", err)
 			}

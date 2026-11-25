@@ -8,6 +8,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestMigrationRefusesToWriteWhileStoreLocked(t *testing.T) {
@@ -17,11 +18,7 @@ func TestMigrationRefusesToWriteWhileStoreLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	holder := filelock.New(s.LockFile, time.Second)
-	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
-		t.Fatalf("acquire: %v %v", ok, err)
-	}
-	defer holder.Release()
+	defer testutil.HoldLock(t, s.LockFile)()
 	s.Lock = filelock.New(s.LockFile, 100*time.Millisecond)
 	if _, err := s.SequenceMigrated(); cerr.TypeName(err) != "LockError" {
 		t.Fatalf("expected lock error, got %v", err)

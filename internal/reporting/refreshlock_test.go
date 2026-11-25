@@ -75,11 +75,7 @@ func TestInactiveRefreshRechecksUnderTheLock(t *testing.T) {
 	t.Run("a held lock means no refresh", func(t *testing.T) {
 		s, calls := setup(t, 1)
 		s.Lock = newShortLock(s)
-		holder := newShortLock(s)
-		if ok, _ := holder.Acquire(time.Second); !ok {
-			t.Fatal("could not take the lock")
-		}
-		defer holder.Release()
+		defer testutil.HoldLock(t, s.LockFile)()
 		out := inactiveRefresh(s, "2", "b@example.com")(context.Background(), held)
 		if *calls != 0 || out.Credentials != "" {
 			t.Fatalf("refreshed without the lock: calls=%d", *calls)

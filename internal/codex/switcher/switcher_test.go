@@ -183,12 +183,21 @@ func (f *fixture) seeded() *Switcher {
 }
 
 // holdLock takes the store lock as "another process" would.
+// holdLock takes the store lock as another process would, on a goroutine of
+// its own: the test's goroutine asking again would be a nesting (DESIGN A118).
 func holdLock(t *testing.T, sw *Switcher) {
 	t.Helper()
 	l := sw.Store().Lock()
-	ok, err := l.Acquire(time.Second)
-	if err != nil || !ok {
-		t.Fatalf("could not take the store lock: ok=%v err=%v", ok, err)
+	took := make(chan error)
+	go func() {
+		ok, err := l.Acquire(time.Second)
+		if err == nil && !ok {
+			err = errors.New("the lock is busy")
+		}
+		took <- err
+	}()
+	if err := <-took; err != nil {
+		t.Fatalf("could not take the store lock: %v", err)
 	}
 	t.Cleanup(func() { _ = l.Release() })
 }
