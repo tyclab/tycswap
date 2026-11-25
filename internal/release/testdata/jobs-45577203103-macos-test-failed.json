@@ -1,0 +1,345 @@
+{
+  "total_count": 3,
+  "jobs": [
+    {
+      "id": 139077965153,
+      "run_id": 45577203103,
+      "workflow_name": "CI",
+      "head_branch": "perf/credential-owner-cost",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45577203103",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgYbFVYQ",
+      "head_sha": "432e214aaf73d1dfc630037c4c18121b33b180a5",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139077965153",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45577203103/job/139077965153",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-25T08:32:39Z",
+      "started_at": "2026-11-25T08:32:42Z",
+      "completed_at": "2026-11-25T08:40:41Z",
+      "name": "windows",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T08:32:44Z",
+          "completed_at": "2026-11-25T08:32:45Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T08:32:45Z",
+          "completed_at": "2026-11-25T08:32:51Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T08:32:51Z",
+          "completed_at": "2026-11-25T08:33:10Z"
+        },
+        {
+          "name": "Run go vet ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-25T08:33:10Z",
+          "completed_at": "2026-11-25T08:33:30Z"
+        },
+        {
+          "name": "Run go build ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-25T08:33:30Z",
+          "completed_at": "2026-11-25T08:33:33Z"
+        },
+        {
+          "name": "Run go test -count=1 ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-25T08:33:33Z",
+          "completed_at": "2026-11-25T08:40:36Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-25T08:40:36Z",
+          "completed_at": "2026-11-25T08:40:36Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-25T08:40:36Z",
+          "completed_at": "2026-11-25T08:40:39Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-25T08:40:39Z",
+          "completed_at": "2026-11-25T08:40:39Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139077965153",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000014924,
+      "runner_name": "GitHub Actions 1000014924",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 139077965592,
+      "run_id": 45577203103,
+      "workflow_name": "CI",
+      "head_branch": "perf/credential-owner-cost",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45577203103",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgYbFXGA",
+      "head_sha": "432e214aaf73d1dfc630037c4c18121b33b180a5",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139077965592",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45577203103/job/139077965592",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-25T08:32:39Z",
+      "started_at": "2026-11-25T08:32:41Z",
+      "completed_at": "2026-11-25T08:44:12Z",
+      "name": "macos",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T08:32:41Z",
+          "completed_at": "2026-11-25T08:32:43Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T08:32:43Z",
+          "completed_at": "2026-11-25T08:32:47Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T08:32:47Z",
+          "completed_at": "2026-11-25T08:32:52Z"
+        },
+        {
+          "name": "Run go vet ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-25T08:32:52Z",
+          "completed_at": "2026-11-25T08:33:10Z"
+        },
+        {
+          "name": "Run go build ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-25T08:33:10Z",
+          "completed_at": "2026-11-25T08:33:16Z"
+        },
+        {
+          "name": "Run go test -count=1 ./...",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 6,
+          "started_at": "2026-11-25T08:33:16Z",
+          "completed_at": "2026-11-25T08:44:09Z"
+        },
+        {
+          "name": "Run CGO_ENABLED=0 go build ./...",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-11-25T08:44:09Z",
+          "completed_at": "2026-11-25T08:44:09Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13,
+          "started_at": "2026-11-25T08:44:09Z",
+          "completed_at": "2026-11-25T08:44:09Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-25T08:44:09Z",
+          "completed_at": "2026-11-25T08:44:10Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-25T08:44:10Z",
+          "completed_at": "2026-11-25T08:44:11Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139077965592",
+      "labels": [
+        "macos-latest"
+      ],
+      "runner_id": 1000014922,
+      "runner_name": "GitHub Actions 1000014922",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 139077965670,
+      "run_id": 45577203103,
+      "workflow_name": "CI",
+      "head_branch": "perf/credential-owner-cost",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45577203103",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgYbFXZg",
+      "head_sha": "432e214aaf73d1dfc630037c4c18121b33b180a5",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139077965670",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45577203103/job/139077965670",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-25T08:32:39Z",
+      "started_at": "2026-11-25T08:32:40Z",
+      "completed_at": "2026-11-25T08:35:49Z",
+      "name": "test",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T08:32:41Z",
+          "completed_at": "2026-11-25T08:32:41Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T08:32:41Z",
+          "completed_at": "2026-11-25T08:32:43Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T08:32:43Z",
+          "completed_at": "2026-11-25T08:32:45Z"
+        },
+        {
+          "name": "Install terminal prompt runtime",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-25T08:32:45Z",
+          "completed_at": "2026-11-25T08:32:59Z"
+        },
+        {
+          "name": "Run make fmt",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-25T08:32:59Z",
+          "completed_at": "2026-11-25T08:32:59Z"
+        },
+        {
+          "name": "Run make vet",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-25T08:32:59Z",
+          "completed_at": "2026-11-25T08:33:05Z"
+        },
+        {
+          "name": "Run make test",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-25T08:33:05Z",
+          "completed_at": "2026-11-25T08:35:35Z"
+        },
+        {
+          "name": "Run make vuln",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-25T08:35:35Z",
+          "completed_at": "2026-11-25T08:35:37Z"
+        },
+        {
+          "name": "Run GOOS=windows go vet ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-25T08:35:37Z",
+          "completed_at": "2026-11-25T08:35:42Z"
+        },
+        {
+          "name": "Run GOOS=darwin CGO_ENABLED=0 go vet ./...",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-25T08:35:42Z",
+          "completed_at": "2026-11-25T08:35:47Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-25T08:35:47Z",
+          "completed_at": "2026-11-25T08:35:47Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-11-25T08:35:47Z",
+          "completed_at": "2026-11-25T08:35:47Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-11-25T08:35:47Z",
+          "completed_at": "2026-11-25T08:35:47Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139077965670",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000014923,
+      "runner_name": "GitHub Actions 1000014923",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
