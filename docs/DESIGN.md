@@ -9967,10 +9967,11 @@ switch's error) where it reported the account held (`accounts-in-use`).
 **Where a write path reads afresh.** `Store.Fresh` is the copy without the
 memo. Every decision that guards a write reads through it whatever store it
 is handed: `EnsureAccountAvailable`, `LegacyReleaseCandidate`,
-`ReleaseLegacyAccount`, `DiscardLegacyLogin`, `RefreshBackupGuarded`,
-`PersistBackupCredentials`, `ClearLegacyForGroup`, the legacy handoff restore,
+`DiscardLegacyLogin`, `RefreshBackupGuarded`, `PersistBackupCredentials`,
+`ClearLegacyForGroup`, the legacy handoff restore,
 `switching.ReleaseIdleLegacy`, the harvest's owner check and a usage fetch's
-choice of credential (`fetchAccountUsage`). `RotationOwnershipBlockReason`
+choice of credential (`fetchAccountUsage`). `ReleaseLegacyAccount` reads
+identities and live PIDs only through `LegacyReleaseCandidate`. `RotationOwnershipBlockReason`
 asks the memo-reading `ensureAccountAvailable` and `legacyReleaseCandidate`.
 A tick prepares, rechecks and switches to a target after its reads have
 ended. `PrepareRotationCandidates` skips an account only when its reads say
@@ -10007,7 +10008,11 @@ seams (`ccfile.ObserveIdentityRead`, `store.ObservePIDScan`).
 `TestTickEndsItsReadsBeforePreparingATarget` pins the scope's end;
 `TestOneReadAnswersAsFreshReads` compares every ownership answer of one read
 with a fresh one;
-`TestWriteGuardsReadAfreshInOneRead`, `TestSnapshotsDoNotShareOwnershipReads`,
+`TestWriteGuardsReadAfreshInOneRead`, `TestLegacyHandoffReadsAfreshInOneRead`,
+`TestDiscardLegacyLoginReadsTheDefaultLoginAfresh`,
+`TestReleaseIdleLegacyReadsAfreshInOneRead`,
+`TestHarvestAndFetchReadTheOwnerAfresh` (each fails when its guard's `Fresh`
+is removed), `TestSnapshotsDoNotShareOwnershipReads`,
 `TestTickSeesAnIdentityChangedBeforeItSwitches` and
 `TestTickSeesASessionEndedSinceTheLastTick` pin freshness;
 `TestCredentialOwnersAsRecorded` the owners as recorded before;

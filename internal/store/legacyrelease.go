@@ -126,8 +126,8 @@ func (s *Store) verifiedLegacyReleaseMarker(owner groups.Owner) error {
 
 // ReleaseLegacyAccount needs the store and source credential/config/storage locks.
 // The marker proves the saved backup if cleanup stops after removing the source.
+// Its one read of identities and live PIDs is LegacyReleaseCandidate's, afresh.
 func (s *Store) ReleaseLegacyAccount(expected *LegacyRelease, verify func(string) error) error {
-	s = s.Fresh()
 	current, err := s.LegacyReleaseCandidate(expected.Owner.Account.Number)
 	if err != nil {
 		return err

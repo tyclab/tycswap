@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/store/ownertest"
@@ -141,6 +142,40 @@ func errText(err error) string {
 func sameOwner(a, b groups.Owner) bool {
 	return a.Scope == b.Scope && filepath.Clean(a.ProfileDir) == filepath.Clean(b.ProfileDir) && a.Account == b.Account &&
 		a.Uncertain == b.Uncertain && slices.Equal(a.PIDs, b.PIDs)
+}
+
+// One read saw account 4 free; then account 2's running profile signs in as
+// account 4. A harvest into 4's backup and a usage fetch for 4 decide on that
+// (DESIGN A116).
+func TestHarvestAndFetchReadTheOwnerAfresh(t *testing.T) {
+	signsInAsFour := func(t *testing.T, opts ownertest.Options) (*ownertest.Fixture, *store.Store) {
+		t.Helper()
+		f := ownerStore(t, opts)
+		view := f.Store.OneRead()
+		if owner, err := view.CredentialOwner("4"); err != nil || owner.Scope != "" {
+			t.Fatalf("fixture: account 4's owner %+v, %v", owner, err)
+		}
+		if err := os.WriteFile(filepath.Join(f.Legacy["2"], ".claude.json"), []byte(ownertest.Identity(f.Emails["4"], "", 0)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return f, view
+	}
+	t.Run("harvest", func(t *testing.T) {
+		f, view := signsInAsFour(t, ownertest.Options{Accounts: 6})
+		harvestLiveCredential(view, store.LiveSlot{Slot: "4", ConfigSlot: "4", Source: store.SourceChain}, ownertest.Creds("1"))
+		if backup, _ := f.Store.ReadAccountCredentials("4", f.Emails["4"]); backup != ownertest.Creds("4") {
+			t.Fatalf("harvested into account 4, which a running profile holds: %s", backup)
+		}
+	})
+	t.Run("fetch", func(t *testing.T) {
+		f, view := signsInAsFour(t, ownertest.Options{Accounts: 6})
+		calls := 0
+		view.OAuth = recordingUsage(&calls, map[string]any{})
+		rec := fetchAccountUsage(view, AccountInfo{Number: 4, Email: f.Emails["4"], Creds: ownertest.Creds("4")})
+		if calls != 0 || rec.Sentinel != jsonout.UsageNoCredentials {
+			t.Fatalf("fetch for account 4 = %+v after %d requests; want no request, owner unknown", rec, calls)
+		}
+	})
 }
 
 // BenchmarkSnapshotOwnership is one state build's store-only snapshot on 8
