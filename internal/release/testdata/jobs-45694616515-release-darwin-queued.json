@@ -1,0 +1,292 @@
+{
+  "total_count": 4,
+  "jobs": [
+    {
+      "id": 139488642399,
+      "run_id": 45694616515,
+      "workflow_name": "Release",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45694616515",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgeivFXw",
+      "head_sha": "4eaee2dd45cd15be46bff9e34e190aa9898769fe",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139488642399",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45694616515/job/139488642399",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-25T20:24:12Z",
+      "started_at": "2026-11-25T20:24:14Z",
+      "completed_at": "2026-11-25T20:24:28Z",
+      "name": "decide",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T20:24:14Z",
+          "completed_at": "2026-11-25T20:24:15Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T20:24:15Z",
+          "completed_at": "2026-11-25T20:24:17Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T20:24:17Z",
+          "completed_at": "2026-11-25T20:24:21Z"
+        },
+        {
+          "name": "Run go run ./internal/release/releasectl decide --event \"$EVENT\" --tag \"$TAG\" --commit \"$COMMIT\" --ci-run \"${CI_RUN:-0}\" --ci-attempt \"${CI_ATTEMPT:-0}\" --attempt \"$GITHUB_RUN_ATTEMPT\" >> \"$GITHUB_OUTPUT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-25T20:24:21Z",
+          "completed_at": "2026-11-25T20:24:26Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-25T20:24:26Z",
+          "completed_at": "2026-11-25T20:24:26Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-25T20:24:26Z",
+          "completed_at": "2026-11-25T20:24:26Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-25T20:24:26Z",
+          "completed_at": "2026-11-25T20:24:26Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139488642399",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000015287,
+      "runner_name": "GitHub Actions 1000015287",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 139488798266,
+      "run_id": 45694616515,
+      "workflow_name": "Release",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45694616515",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgei4mOg",
+      "head_sha": "4eaee2dd45cd15be46bff9e34e190aa9898769fe",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139488798266",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45694616515/job/139488798266",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-25T20:24:28Z",
+      "started_at": "2026-11-25T20:24:30Z",
+      "completed_at": "2026-11-25T20:24:42Z",
+      "name": "tag",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T20:24:31Z",
+          "completed_at": "2026-11-25T20:24:32Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T20:24:32Z",
+          "completed_at": "2026-11-25T20:24:34Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T20:24:34Z",
+          "completed_at": "2026-11-25T20:24:37Z"
+        },
+        {
+          "name": "Run go run ./internal/release/releasectl tag --tag \"$TAG\" --commit \"$COMMIT\"",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-25T20:24:37Z",
+          "completed_at": "2026-11-25T20:24:40Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-25T20:24:40Z",
+          "completed_at": "2026-11-25T20:24:40Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-25T20:24:40Z",
+          "completed_at": "2026-11-25T20:24:40Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-25T20:24:40Z",
+          "completed_at": "2026-11-25T20:24:40Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139488798266",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000015288,
+      "runner_name": "GitHub Actions 1000015288",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 139488931440,
+      "run_id": 45694616515,
+      "workflow_name": "Release",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45694616515",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgejAucA",
+      "head_sha": "4eaee2dd45cd15be46bff9e34e190aa9898769fe",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139488931440",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45694616515/job/139488931440",
+      "status": "queued",
+      "conclusion": null,
+      "created_at": "2026-11-25T20:24:42Z",
+      "started_at": "2026-11-25T20:24:42Z",
+      "completed_at": null,
+      "name": "darwin",
+      "steps": [],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139488931440",
+      "labels": [
+        "macos-latest"
+      ],
+      "runner_id": null,
+      "runner_name": null,
+      "runner_group_id": null,
+      "runner_group_name": null
+    },
+    {
+      "id": 139488931457,
+      "run_id": 45694616515,
+      "workflow_name": "Release",
+      "head_branch": "main",
+      "run_url": "https://api.github.com/repos/tyclab/tycswap/actions/runs/45694616515",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOU1spjs8AAAAgejAugQ",
+      "head_sha": "4eaee2dd45cd15be46bff9e34e190aa9898769fe",
+      "url": "https://api.github.com/repos/tyclab/tycswap/actions/jobs/139488931457",
+      "html_url": "https://github.com/tyclab/tycswap/actions/runs/45694616515/job/139488931457",
+      "status": "in_progress",
+      "conclusion": null,
+      "created_at": "2026-11-25T20:24:42Z",
+      "started_at": "2026-11-25T20:24:44Z",
+      "completed_at": null,
+      "name": "linux-windows",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-25T20:24:45Z",
+          "completed_at": "2026-11-25T20:24:45Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-25T20:24:45Z",
+          "completed_at": "2026-11-25T20:24:47Z"
+        },
+        {
+          "name": "Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-25T20:24:47Z",
+          "completed_at": "2026-11-25T20:24:51Z"
+        },
+        {
+          "name": "Build",
+          "status": "in_progress",
+          "conclusion": null,
+          "number": 4,
+          "started_at": "2026-11-25T20:24:51Z",
+          "completed_at": null
+        },
+        {
+          "name": "Smoke test",
+          "status": "pending",
+          "conclusion": null,
+          "number": 5,
+          "started_at": null,
+          "completed_at": null
+        },
+        {
+          "name": "Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "status": "pending",
+          "conclusion": null,
+          "number": 6,
+          "started_at": null,
+          "completed_at": null
+        },
+        {
+          "name": "Post Run actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+          "status": "pending",
+          "conclusion": null,
+          "number": 11,
+          "started_at": null,
+          "completed_at": null
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "pending",
+          "conclusion": null,
+          "number": 12,
+          "started_at": null,
+          "completed_at": null
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/tyclab/tycswap/check-runs/139488931457",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000015290,
+      "runner_name": "GitHub Actions 1000015290",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

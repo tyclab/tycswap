@@ -30,7 +30,7 @@ fmt: ## gofmt all source (fails if anything was unformatted)
 vuln: ## Scan for known vulnerabilities (govulncheck, fetched by go run)
 	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
-release-check: ## Check CHANGELOG.md's version against the v* tags and RELEASE_BASE (git fetch origin --tags first)
+release-check: ## Check CHANGELOG.md against RELEASE_BASE and print what the merge releases (git fetch origin --tags first)
 	go run ./internal/release/releasectl check --base $(RELEASE_BASE)
 
 clean: ## Remove built binary

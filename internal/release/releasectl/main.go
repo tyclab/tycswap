@@ -1,9 +1,9 @@
 // Command releasectl runs internal/release for `make release-check` and the
-// Release and Retry workflows (DESIGN A119):
+// Release and Retry workflows (DESIGN A119, A121):
 //
 //	releasectl check   [--base REV] [--head REV]
-//	releasectl decide  --event E [--tag T] [--commit SHA] [--ci-run ID --ci-attempt N] --attempt N
-//	releasectl tag     --tag T --commit SHA
+//	releasectl decide  --event E [--tag T] [--commit SHA] --attempt N
+//	releasectl tag     --commit SHA --attempt N
 //	releasectl publish --tag T --commit SHA --dist DIR [--publish]
 //	releasectl retry   --run ID --attempt N
 package main
@@ -53,20 +53,45 @@ func check(args []string) error {
 	if err != nil {
 		return err
 	}
-	tags, err := repo.Tags("")
+	since, err := repo.NewestTag(*base)
 	if err != nil {
 		return err
 	}
-	v, err := release.CheckVersion(headText, baseText, tags)
-	switch {
-	case err != nil:
-		return err
-	case v == "":
-		fmt.Println("CHANGELOG.md names no new version: merging this releases nothing.")
-	default:
-		fmt.Printf("CHANGELOG.md names %s: merging this tags and publishes it, with its section as the notes.\n", v)
+	tagged := ""
+	if since != "" {
+		if tagged, err = repo.Changelog(since); err != nil {
+			return err
+		}
 	}
+	p, err := release.CheckChange(headText, baseText, tagged, since)
+	if err != nil {
+		return err
+	}
+	if len(p.Entries) == 0 {
+		fmt.Printf("Merging this releases nothing: CHANGELOG.md has no entry that %s lacks.\n", orNoTag(since))
+		return nil
+	}
+	these := "this entry"
+	if len(p.Entries) > 1 {
+		these = fmt.Sprintf("these %d entries", len(p.Entries))
+	}
+	fmt.Printf("Merging this releases %s (%s over %s: %s), with %s as its notes:\n\n%s\n",
+		p.Version, p.Bump, orNoTag(since), bumpReason(p.Bump), these, p.Notes())
 	return nil
+}
+
+func orNoTag(tag string) string {
+	if tag == "" {
+		return "no tag"
+	}
+	return tag
+}
+
+func bumpReason(bump string) string {
+	if bump == "patch" {
+		return "every new entry is **Fixed:**"
+	}
+	return "not every new entry is **Fixed:**"
 }
 
 func readHead(rev string) (string, error) {
@@ -81,10 +106,11 @@ func decide(args []string) error {
 	fs := flag.NewFlagSet("decide", flag.ExitOnError)
 	event := fs.String("event", "", "workflow_run, push or workflow_dispatch")
 	tagName := fs.String("tag", "", "the tag pushed or asked for")
-	commit := fs.String("commit", "", "the merge commit CI completed on")
-	ciRun := fs.Int64("ci-run", 0, "CI's run id")
-	ciAttempt := fs.Int("ci-attempt", 0, "the CI attempt that completed")
+	commit := fs.String("commit", "", "the merge commit CI or macOS completed on")
 	attempt := fs.Int("attempt", 1, "this run's attempt")
+	// A rerun of a Release run from before A121 still passes these.
+	fs.Int64("ci-run", 0, "ignored")
+	fs.Int("ci-attempt", 0, "ignored")
 	_ = fs.Parse(args)
 	api, err := release.ClientFromEnv()
 	if err != nil {
@@ -94,11 +120,11 @@ func decide(args []string) error {
 	f := release.Facts{Attempt: *attempt}
 	switch *event {
 	case "workflow_run":
-		f.Mode, f.Commit = release.ModeMerge, repo.Commit(*commit)
-		if f.Commit == "" {
+		sha := repo.Commit(*commit)
+		if sha == "" {
 			return fmt.Errorf("no commit %q", *commit)
 		}
-		if f.Version, err = release.VersionAt(repo, f.Commit); err != nil {
+		if f, err = release.MergeFacts(repo, sha, *attempt); err != nil {
 			return err
 		}
 	case "push", "workflow_dispatch":
@@ -107,14 +133,12 @@ func decide(args []string) error {
 			f.Mode = release.ModeDispatch
 		}
 		f.Commit = repo.TagCommit(f.Version)
-		_, f.HasNotes = release.NotesAt(repo, f.Commit, f.Version)
+		f.TagCommit = f.Commit
+		_, f.HasNotes = release.NotesAt(repo, f.Commit)
 	default:
 		return fmt.Errorf("unknown event %q", *event)
 	}
-	if f.Version != "" {
-		f.TagCommit = repo.TagCommit(f.Version)
-	}
-	f.Gate = func() (release.Verdict, []string, error) { return release.CIGate(ctx, api, *ciRun, *ciAttempt) }
+	f.Gate = func() (release.Verdict, []string, error) { return release.ReleaseGate(ctx, api, f.Commit) }
 	f.Missing = func() (release.Missing, error) { return release.PublishedMissing(ctx, api, f.Version) }
 	plan, err := release.Decide(f, os.Stderr)
 	if err != nil {
@@ -124,27 +148,26 @@ func decide(args []string) error {
 	return nil
 }
 
+// tag prints the tag job's outputs: the release's tag and whether this run
+// builds and publishes it.
 func tag(args []string) error {
 	fs := flag.NewFlagSet("tag", flag.ExitOnError)
-	name := fs.String("tag", "", "the version to tag")
 	commit := fs.String("commit", "", "the merge commit")
+	attempt := fs.Int("attempt", 1, "this run's attempt")
+	fs.String("tag", "", "ignored: the version is computed again (a Release run from before A121 passes it)")
 	_ = fs.Parse(args)
-	created, err := repo.CreateTag(*name, *commit, "origin")
+	c, err := release.ClaimTag(repo, *commit, "origin", *attempt, os.Stderr)
 	if err != nil {
 		return err
 	}
-	if created {
-		fmt.Printf("tagged %s on %s\n", *name, *commit)
-	} else {
-		fmt.Printf("%s was already tagged on %s\n", *name, *commit)
-	}
+	fmt.Printf("tag=%s\nrelease=%t\n", c.Tag, c.Release)
 	return nil
 }
 
 func publish(args []string) error {
 	fs := flag.NewFlagSet("publish", flag.ExitOnError)
 	name := fs.String("tag", "", "the release's tag")
-	commit := fs.String("commit", "", "the tag's commit, whose CHANGELOG.md holds the notes")
+	commit := fs.String("commit", "", "the tag's commit, whose new entries are the notes")
 	dir := fs.String("dist", "dist", "the builds to attach")
 	pub := fs.Bool("publish", false, "publish the draft once Linux and Windows are attached")
 	_ = fs.Parse(args)
@@ -156,9 +179,9 @@ func publish(args []string) error {
 		return err
 	}
 	p := release.Publisher{API: api, Tag: *name, Publish: *pub, Dist: *dir, Log: os.Stdout}
-	p.Notes, p.HasNotes = release.NotesAt(repo, *commit, *name)
+	p.Notes, p.HasNotes = release.NotesAt(repo, *commit)
 	if !p.HasNotes {
-		fmt.Printf("CHANGELOG.md at %s has no section %s: the release keeps its notes or gets the placeholder\n", *commit, *name)
+		fmt.Printf("CHANGELOG.md at %s adds no entry over the tag before it: the release keeps its notes or gets the placeholder\n", *commit)
 	}
 	return p.Run(context.Background())
 }

@@ -1,5 +1,5 @@
 // Package release decides and publishes tycswap's releases from CHANGELOG.md
-// (DESIGN A119). The pull request check, the release workflow and the
+// (DESIGN A119, A121). The pull request check, the release workflow and the
 // runner retry all run this code; the workflows only call it.
 package release
 
@@ -12,9 +12,11 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// UnreleasedHeading collects entries no version names yet; LegacyHeading
-// holds every entry written before versions had sections, as they were.
+// TopHeading is the one section new entries go into, at its top; nobody
+// renames it. UnreleasedHeading is where entries went before A121, and
+// LegacyHeading holds every entry written before versions had sections.
 const (
+	TopHeading        = "## Since v0.24.1"
 	UnreleasedHeading = "## Unreleased"
 	LegacyHeading     = "## v0.23.3 and earlier"
 )
@@ -23,7 +25,8 @@ const (
 type Kind int
 
 const (
-	Unreleased Kind = iota
+	Top Kind = iota
+	Unreleased
 	Version
 	Legacy
 )
@@ -33,19 +36,22 @@ type Section struct {
 	Kind    Kind
 	Version string // vMAJOR.MINOR.PATCH of a Version section
 	Heading string
-	// Body is the text under the heading without its surrounding blank
-	// lines: a version's release notes.
-	Body string
-	Line int
+	// Body is the text under the heading without its surrounding blank lines.
+	Body  string
+	Line  int
+	lines []string // the body as written, from the line after the heading
 }
 
 // Changelog is CHANGELOG.md's sections in file order.
-type Changelog struct{ Sections []Section }
+type Changelog struct {
+	Sections []Section
+	preamble []string // the lines above the first heading, from line 1
+}
 
 var versionHeading = regexp.MustCompile(`^## (v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))$`)
 
 // Parse reads CHANGELOG.md. Every level-two heading outside a fenced block
-// is ## Unreleased (first, at most once), ## vMAJOR.MINOR.PATCH (newest
+// is the top section or ## Unreleased (first), ## vMAJOR.MINOR.PATCH (newest
 // first, each once) or the legacy heading (last); anything else is an error.
 func Parse(text string) (Changelog, error) {
 	var c Changelog
@@ -54,20 +60,15 @@ func Parse(text string) (Changelog, error) {
 	var body []string
 	flush := func() {
 		if cur != nil {
-			cur.Body = trimBlankLines(body)
+			cur.Body, cur.lines = trimBlankLines(body), body
 			c.Sections = append(c.Sections, *cur)
+		} else if c.Sections == nil {
+			c.preamble = body
 		}
 	}
 	fence := ""
 	for i, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
-		if run := fenceRun(line); run != "" {
-			switch {
-			case fence == "":
-				fence = run
-			case run[0] == fence[0] && len(run) >= len(fence):
-				fence = ""
-			}
-		}
+		fence = nextFence(fence, line)
 		heading := strings.TrimRight(line, " \t")
 		if fence != "" || (heading != "##" && !strings.HasPrefix(heading, "## ")) {
 			body = append(body, line)
@@ -76,6 +77,8 @@ func Parse(text string) (Changelog, error) {
 		flush()
 		cur, body = &Section{Heading: heading, Line: i + 1}, nil
 		switch m := versionHeading.FindStringSubmatch(heading); {
+		case heading == TopHeading:
+			cur.Kind = Top
 		case heading == UnreleasedHeading:
 			cur.Kind = Unreleased
 		case heading == LegacyHeading:
@@ -84,7 +87,7 @@ func Parse(text string) (Changelog, error) {
 			cur.Kind, cur.Version = Version, m[1]
 		default:
 			problems = append(problems, fmt.Errorf("line %d: %q is not a section heading CHANGELOG.md allows (%s, ## vMAJOR.MINOR.PATCH, %s)",
-				i+1, heading, UnreleasedHeading, LegacyHeading))
+				i+1, heading, TopHeading, LegacyHeading))
 			cur = nil
 		}
 	}
@@ -96,6 +99,7 @@ func Parse(text string) (Changelog, error) {
 func (c Changelog) order() []error {
 	var problems []error
 	seen := map[string]bool{}
+	_, hasTop := c.section(Top)
 	var prev *Section
 	for i := range c.Sections {
 		s := &c.Sections[i]
@@ -105,8 +109,8 @@ func (c Changelog) order() []error {
 		}
 		seen[s.Heading] = true
 		switch {
-		case s.Kind == Unreleased && i > 0:
-			problems = append(problems, fmt.Errorf("line %d: %s must be the first section", s.Line, UnreleasedHeading))
+		case (s.Kind == Top || (s.Kind == Unreleased && !hasTop)) && i > 0:
+			problems = append(problems, fmt.Errorf("line %d: %s must be the first section", s.Line, s.Heading))
 		case s.Kind == Legacy && i < len(c.Sections)-1:
 			problems = append(problems, fmt.Errorf("line %d: %s must be the last section", s.Line, LegacyHeading))
 		case s.Kind == Version && prev != nil && semver.Compare(s.Version, prev.Version) >= 0:
@@ -119,18 +123,108 @@ func (c Changelog) order() []error {
 	return problems
 }
 
-// Notes is version's section body, and whether CHANGELOG.md has the section.
-func (c Changelog) Notes(version string) (string, bool) {
+// section is the first section of kind.
+func (c Changelog) section(kind Kind) (Section, bool) {
 	for _, s := range c.Sections {
-		if s.Kind == Version && s.Version == version {
-			return s.Body, true
+		if s.Kind == kind {
+			return s, true
 		}
 	}
-	return "", false
+	return Section{}, false
 }
 
-// fenceRun is the backtick or tilde run that opens or closes a fenced code
-// block on line (at most three spaces of indent), "" when there is none.
+// top is the section new entries go into: the top section, or ## Unreleased
+// in a CHANGELOG.md from before A121.
+func (c Changelog) top() (Section, bool) {
+	if s, ok := c.section(Top); ok {
+		return s, true
+	}
+	return c.section(Unreleased)
+}
+
+// Entry is one top-level list item: its first line starts with "- ", and the
+// lines up to the next such line or heading continue it.
+type Entry struct {
+	Text string // as written, without trailing blank lines: the release notes carry it
+	Line int    // its first line in the file
+}
+
+// key is the entry's identity: its text without trailing white space.
+func (e Entry) key() string {
+	lines := strings.Split(e.Text, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " \t")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// Fixed says the entry is a fix: it starts with **Fixed:**.
+func (e Entry) Fixed() bool { return strings.HasPrefix(e.Text, "- **Fixed:**") }
+
+// Entries are the entries of every section, in file order.
+func (c Changelog) Entries() []Entry {
+	var out []Entry
+	for _, s := range c.Sections {
+		out = append(out, s.Entries()...)
+	}
+	return out
+}
+
+// Entries are the section's entries, in file order.
+func (s Section) Entries() []Entry {
+	entries, _ := splitEntries(s.lines, s.Line+1)
+	return entries
+}
+
+// splitEntries reads lines, the first of which is line number first, as
+// entries. stray is each line outside a fenced block that starts no entry
+// and continues none: text above the first entry, or a list item marked
+// with * or +.
+func splitEntries(lines []string, first int) (entries []Entry, stray []int) {
+	var cur []string
+	at := 0
+	flush := func() {
+		if cur != nil {
+			entries = append(entries, Entry{Text: trimBlankLines(cur), Line: at})
+		}
+	}
+	fence := ""
+	for i, line := range lines {
+		wasFence := fence
+		fence = nextFence(fence, line)
+		switch {
+		case wasFence == "" && strings.HasPrefix(line, "- "):
+			flush()
+			cur, at = []string{line}, first+i
+		case wasFence == "" && (strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "+ ")):
+			stray = append(stray, first+i)
+		case cur != nil:
+			cur = append(cur, line)
+		case strings.TrimSpace(line) != "":
+			stray = append(stray, first+i)
+		}
+	}
+	flush()
+	return entries, stray
+}
+
+// nextFence is the fence open after line, given the one open before it: a
+// backtick or tilde run of three or more (at most three spaces of indent)
+// opens a fenced block, and a run of the same character at least as long
+// closes it.
+func nextFence(open, line string) string {
+	run := fenceRun(line)
+	switch {
+	case run == "":
+		return open
+	case open == "":
+		return run
+	case run[0] == open[0] && len(run) >= len(open):
+		return ""
+	}
+	return open
+}
+
 func fenceRun(line string) string {
 	t := strings.TrimLeft(line, " ")
 	if len(line)-len(t) > 3 {

@@ -34,27 +34,28 @@ type Run struct {
 	HeadSHA    string `json:"head_sha"`
 }
 
+// Started says a step of the job has started: a runner took it.
+func (j Job) Started() bool {
+	for _, s := range j.Steps {
+		if s.StartedAt != nil && *s.StartedAt != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // FoundNoRunner is the runner shortage's signature: the job was cancelled
 // before any of its steps started (GitHub gives up on a queued job after
 // about 15 minutes, with no runner and no step).
-func (j Job) FoundNoRunner() bool {
-	if j.Conclusion != "cancelled" {
-		return false
-	}
-	for _, s := range j.Steps {
-		if s.StartedAt != nil && *s.StartedAt != "" {
-			return false
-		}
-	}
-	return true
-}
+func (j Job) FoundNoRunner() bool { return j.Conclusion == "cancelled" && !j.Started() }
 
 // Verdict is what CI on a merge commit says about releasing it.
 type Verdict int
 
 const (
 	Pass Verdict = iota
-	// Wait: a required job found no runner; its rerun decides.
+	// Wait: a job the release needs has not finished, or found no runner;
+	// a later completion decides.
 	Wait
 	Block
 )
@@ -63,14 +64,30 @@ func (v Verdict) String() string {
 	return [...]string{"pass", "wait", "block"}[v]
 }
 
-// GateCI decides on CI's jobs of the merge commit: test and windows must
-// have passed; macos must have passed or found no runner (it is not waited
-// for); anything else blocks the release.
-func GateCI(jobs []Job) (Verdict, []string) {
-	byName := map[string]Job{}
-	for _, j := range jobs {
-		byName[j.Name] = j
+// RunJobs is one workflow's run on a merge commit: its status and the jobs
+// of its attempts, oldest first, the last being the latest. The zero value
+// is a workflow without a run there.
+type RunJobs struct {
+	ID       int64
+	Status   string
+	Attempts [][]Job
+}
+
+func (r RunJobs) latest() []Job {
+	if len(r.Attempts) == 0 {
+		return nil
 	}
+	return r.Attempts[len(r.Attempts)-1]
+}
+
+// GateRelease decides on the runs of CI and macOS on a merge commit. CI's
+// test and windows must have passed: a job not completed, or one that found
+// no runner, waits; anything else blocks. macOS is waited for only while
+// its job runs: passed, without a run, queued with no step started, or
+// cancelled with none (no runner) releases, unless the last attempt in
+// which it ran did not pass (blocks; waits while a rerun is queued); a run
+// that ended otherwise blocks. A block outweighs a wait.
+func GateRelease(ci, mac RunJobs) (Verdict, []string) {
 	verdict, why := Pass, []string(nil)
 	worse := func(v Verdict, reason string) {
 		if v > verdict {
@@ -78,43 +95,73 @@ func GateCI(jobs []Job) (Verdict, []string) {
 		}
 		why = append(why, reason)
 	}
-	for _, name := range []string{"test", "windows", "macos"} {
-		j, ok := byName[name]
+	if ci.ID == 0 {
+		worse(Wait, "CI has no run on this commit yet: its completion decides")
+	}
+	for _, name := range []string{"test", "windows"} {
+		j := findJob(ci.latest(), name)
 		switch {
-		case !ok:
+		case ci.ID == 0:
+		case j.Name == "" && ci.Status != "completed":
+			worse(Wait, name+" has not started yet: CI's completion decides")
+		case j.Name == "":
 			worse(Block, fmt.Sprintf("CI ran no job named %q", name))
 		case j.Conclusion == "success":
-		case j.FoundNoRunner() && name == "macos":
-			worse(Pass, "macos found no runner: the release does not wait for it")
 		case j.FoundNoRunner():
-			worse(Wait, name+" found no runner: the Retry workflow reruns it, and CI's next completion decides again")
+			worse(Wait, name+" found no runner: the Retry workflow reruns it, and its completion decides again")
+		case j.Status != "completed":
+			worse(Wait, name+" has not completed: CI's completion decides")
 		default:
 			worse(Block, fmt.Sprintf("%s ended %s", name, orNone(j.Conclusion)))
 		}
 	}
+	gateMacOS(mac, worse)
 	return verdict, why
 }
 
-// GateCIAttempts is GateCI on the latest of a run's attempts (oldest
-// first), except that a macos that found no runner blocks when the last
-// earlier attempt in which macos ran did not pass: it ran and failed.
-func GateCIAttempts(attempts [][]Job) (Verdict, []string) {
-	latest := attempts[len(attempts)-1]
-	v, why := GateCI(latest)
-	if v != Pass || !findJob(latest, "macos").FoundNoRunner() {
-		return v, why
+func gateMacOS(mac RunJobs, worse func(Verdict, string)) {
+	if mac.ID == 0 {
+		worse(Pass, "macOS has no run on this commit: the release does not wait for it")
+		return
 	}
-	for i := len(attempts) - 2; i >= 0; i-- {
-		m := findJob(attempts[i], "macos")
+	j := findJob(mac.latest(), "macos")
+	queued := (j.Name == "" && mac.Status != "completed") || (j.Name != "" && j.Status != "completed" && !j.Started())
+	switch {
+	case j.Conclusion == "success":
+		return
+	case j.Name != "" && j.Status != "completed" && j.Started():
+		worse(Wait, "macos is running: the macOS workflow's completion decides")
+		return
+	case !queued && !j.FoundNoRunner() && j.Name == "":
+		worse(Block, `the macOS workflow ran no job named "macos"`)
+		return
+	case !queued && !j.FoundNoRunner():
+		worse(Block, "macos ended "+orNone(j.Conclusion))
+		return
+	}
+	// macos has not run in the latest attempt: the last attempt in which it
+	// ran says whether it failed.
+	for i := len(mac.Attempts) - 2; i >= 0; i-- {
+		m := findJob(mac.Attempts[i], "macos")
 		if m.Name == "" || m.FoundNoRunner() {
 			continue
 		}
-		if m.Conclusion != "success" {
-			return Block, append(why, fmt.Sprintf("macos ran in attempt %d and ended %s", i+1, orNone(m.Conclusion)))
+		switch {
+		case m.Conclusion == "success":
+		case queued:
+			worse(Wait, fmt.Sprintf("macos ran in attempt %d and ended %s, and its rerun is queued: the rerun's completion decides", i+1, orNone(m.Conclusion)))
+			return
+		default:
+			worse(Block, fmt.Sprintf("macos ran in attempt %d and ended %s; its rerun found no runner", i+1, orNone(m.Conclusion)))
+			return
 		}
 		break
 	}
-	return v, why
+	if queued {
+		worse(Pass, "macos is queued and has not started: the release does not wait for it")
+	} else {
+		worse(Pass, "macos found no runner: the release does not wait for it")
+	}
 }
 
 func findJob(jobs []Job, name string) Job {

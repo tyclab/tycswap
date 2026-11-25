@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## Since v0.24.1
+
+- Every merge to main that adds an entry to `CHANGELOG.md` is released, and nobody names a version any more: the release's notes are the entries the newest tag lacks, and its version is that tag's with the patch number raised when every one of them starts with `**Fixed:**`, else the minor number (after v0.24.1, v0.24.2 or v0.25.0). Entries go at the top of `## Since v0.24.1`, which is never renamed; `## Unreleased` is gone, and the pull request check (`make release-check`) prints what the merge will release or refuses, saying where the entry goes. When merges are released out of order, one release carries all their entries. A release no longer waits about 15 minutes for a Mac runner that does not come: the `macos` check runs in its own workflow, and a release waits for it only while it runs; a macOS job that ran and failed still holds the release.
 
 ## v0.24.1
 

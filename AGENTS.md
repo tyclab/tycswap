@@ -15,9 +15,11 @@ command, credential, session, recovery and UI contracts.
 - Follow go.mod's Go version. Validate with `make fmt`, `go test ./...`,
   `go vet ./...`, `GOOS=windows go vet ./...`, and
   `GOOS=darwin CGO_ENABLED=0 go vet ./...`. `make build` creates a versioned binary.
-- A pull request releases by naming its version in CHANGELOG.md
-  (`## vX.Y.Z`, checked by `make release-check`); never tag, draft or publish
-  a release by hand. Read [releasing](docs/agents/releasing.md).
+- A pull request that changes what users get writes one entry at the top of
+  `## Since v0.24.1` in CHANGELOG.md and nothing else; its merge releases it
+  with a computed version (`make release-check` prints which). Never name a
+  version, tag, draft or publish a release by hand. Read
+  [releasing](docs/agents/releasing.md).
 - Inspect incoming branches and preserve concurrent work. Respect repository
   hooks and merge defaults. Keep private addresses, personal/employer details and
   credentials out of this public repo; use the repo-local identity or noreply email.

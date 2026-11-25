@@ -10,6 +10,7 @@ permissions:
   contents: read
 
 # Each push to main keeps its own run: its release waits for it (DESIGN A119).
+# The macos job is its own workflow, macos.yml (DESIGN A121).
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -46,7 +47,7 @@ jobs:
           done
           exit 1
       # The Makefile targets, so CI and a developer's machine run the same commands.
-      - name: Release version check against the base (DESIGN A119)
+      - name: CHANGELOG.md check against the base, and what the merge releases (DESIGN A121)
         run: make release-check RELEASE_BASE=HEAD^1
       - run: make fmt
       - run: make vet
@@ -70,19 +71,3 @@ jobs:
       - run: go vet ./...
       - run: go build ./...
       - run: go test -count=1 ./...
-
-  # macOS builds internal/tray with cgo against Cocoa, the one place cgo is
-  # allowed (DESIGN A12, A35): this job compiles and tests the Objective-C
-  # with the whole suite, then the CGO_ENABLED=0 stub a machine without a C
-  # toolchain gets.
-  macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-      - run: go vet ./...
-      - run: go build ./...
-      - run: go test -count=1 ./...
-      - run: CGO_ENABLED=0 go build ./...

@@ -35,7 +35,9 @@ func TestDecide(t *testing.T) {
 		want    Plan
 		wantErr string
 	}{
-		{"a merge that names no version", Facts{Mode: ModeMerge, Commit: mergeSHA, Gate: noGate, Missing: noRelease}, Plan{}, ""},
+		{"a merge that adds no entry", Facts{Mode: ModeMerge, Commit: mergeSHA, Since: "v0.24.1", Gate: noGate, Missing: noRelease}, Plan{}, ""},
+		{"a later commit's tag carries the entries", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.25.0", CarriedBy: "v0.25.0", TagCommit: "2222222222222222", Attempt: 1, Gate: noGate, Missing: noRelease}, Plan{}, ""},
+		{"a later commit's tag of another name carries them", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.2", CarriedBy: "v0.25.0", Attempt: 2, Gate: noGate, Missing: noRelease}, Plan{}, ""},
 		{"CI passed: tag and release everything", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", Attempt: 1, Gate: gateSays(Pass), Missing: noRelease},
 			Plan{Tag: "v0.24.0", Commit: mergeSHA, CreateTag: true, Publish: true, LinuxWindows: true, Darwin: true}, ""},
 		{"macOS found no runner: same", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", Attempt: 1, Gate: gateSays(Pass, "macos found no runner"), Missing: noRelease},
@@ -43,7 +45,7 @@ func TestDecide(t *testing.T) {
 		{"windows found no runner: wait", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", Attempt: 1, Gate: gateSays(Wait), Missing: noRelease}, Plan{}, ""},
 		{"CI failed: refuse loudly", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", Attempt: 1, Gate: gateSays(Block, "macos ended failure"), Missing: noRelease},
 			Plan{}, "macos ended failure"},
-		{"tag elsewhere", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", TagCommit: "2222222222222222", Gate: noGate, Missing: noRelease},
+		{"tag elsewhere, not carrying the entries", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", TagCommit: "2222222222222222", Gate: noGate, Missing: noRelease},
 			Plan{}, "tag v0.24.0 points at 222222222222"},
 		{"a fresh run for a tagged merge leaves it to the tagging run", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", TagCommit: mergeSHA, Attempt: 1, Gate: noGate, Missing: noRelease}, Plan{}, ""},
 		{"a rerun finishes macOS", Facts{Mode: ModeMerge, Commit: mergeSHA, Version: "v0.24.0", TagCommit: mergeSHA, Attempt: 2, Gate: noGate, Missing: missing(false, true)},
