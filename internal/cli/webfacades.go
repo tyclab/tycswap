@@ -210,10 +210,12 @@ func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 // View is the engine's state and what it counts now; the policy behind the
 // count scans processes, so it runs outside the host's lock. It is one read
 // operation (DESIGN A116).
-func (a *autoFacade) View() web.AutoView {
+func (a *autoFacade) View() web.AutoView { return a.viewIn(a.sw.Store.OneRead()) }
+
+// viewIn is View reading through read, a state build's read operation (A117).
+func (a *autoFacade) viewIn(read *store.Store) web.AutoView {
 	v, s, hosted := a.view()
 	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
-	read := a.sw.Store.OneRead()
 	var policy reporting.PolicyResult
 	v.Counting, policy = a.counting(read, s, hosted)
 	data, _ := read.ReadSequence()

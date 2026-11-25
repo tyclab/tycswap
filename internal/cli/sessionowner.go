@@ -7,14 +7,19 @@ import (
 )
 
 func sessionLogin(sw *core.Switcher, id string) (label, number string) {
-	rec, err := reporting.InspectSessionLink(sw.BackupDir(), id, sw.Clk.Now())
+	return placementFor(sw.Store, false).sessionLogin(id)
+}
+
+// sessionLogin is the login a session's link names and its owner, on p's inputs.
+func (p *placementInputs) sessionLogin(id string) (label, number string) {
+	rec, err := reporting.InspectSessionLink(p.view.BackupDir(), id, p.view.Clk.Now())
 	if err != nil {
 		if cerr.TypeName(err) == string(cerr.KindAccountNotFound) {
 			return "", ""
 		}
 		return "unknown", "unknown"
 	}
-	return reporting.SessionLoginOwner(sw.Store, rec.Target)
+	return p.loginLabel(rec.Target)
 }
 
 func (d *dashboard) SessionLogin(id string) (label, number string) {

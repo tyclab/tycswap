@@ -125,6 +125,21 @@ type IdeInstanceJSON struct {
 	WorkspaceFolders []string `json:"workspaceFolders"`
 }
 
+// StateReads is what one state build reads through: one read operation
+// (DESIGN A117). Each build asks Deps.BuildReads for its own and drops it when
+// it ends, so what one build read answers neither another build nor a
+// mutation, which keeps the façades of Deps. A nil function leaves its part
+// out, as a nil façade does.
+type StateReads struct {
+	Snapshot       func(fetch map[string]bool) *reporting.AccountsSnapshot
+	ListAccounts   func(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error)
+	CurrentLogin   func() (email string, ok bool)
+	AutoView       func() AutoView
+	NextStartModel func() (string, error)
+	SessionLogin   func(id string) (label, number string)
+	SessionMoves   func(id string) ([]string, error)
+}
+
 // stateOpts are the per-request knobs on the state document.
 type stateOpts struct {
 	// tokenStatus lifts each row's OAuth token status out of the
@@ -138,7 +153,8 @@ type stateOpts struct {
 // Claude rows; activeNumber, currentLogin and the token status stay Claude's.
 func (s *Server) buildState(o stateOpts) State {
 	seq := s.stateSeq.Add(1)
-	snap := s.d.Snapshot.AccountsSnapshot(nil)
+	r := s.stateReads()
+	snap := r.Snapshot(nil)
 	st := State{
 		Sequence:      seq,
 		SchemaVersion: stateSchemaVersion,
@@ -165,11 +181,11 @@ func (s *Server) buildState(o stateOpts) State {
 			st.Accounts = append(st.Accounts, accountRow(a))
 		}
 	}
-	if o.tokenStatus && s.d.Accounts != nil {
-		s.enrichTokenStatus(st.Accounts)
+	if o.tokenStatus && r.ListAccounts != nil {
+		s.enrichTokenStatus(r.ListAccounts, st.Accounts)
 	}
-	if s.d.CurrentLogin != nil {
-		if email, ok := s.d.CurrentLogin(); ok && email != "" {
+	if r.CurrentLogin != nil {
+		if email, ok := r.CurrentLogin(); ok && email != "" {
 			// Saved is exactly "the active account is managed": the
 			// snapshot's active number is the stored slot of the live login.
 			st.CurrentLogin = &CurrentLoginView{Email: email, Saved: st.ActiveNumber != nil}
@@ -196,11 +212,18 @@ func (s *Server) buildState(o stateOpts) State {
 		st.UI = s.uiView()
 	}
 
-	if s.d.Settings != nil {
-		st.Settings = s.settingsViews()
+	// One Auto view per build: the settings ask it whether a scheduler runs
+	// the ticks.
+	var auto *AutoView
+	if r.AutoView != nil {
+		v := r.AutoView()
+		auto = &v
 	}
-	if s.d.Auto != nil {
-		v := s.d.Auto.View()
+	if s.d.Settings != nil {
+		st.Settings = s.settingsList(auto != nil && auto.Owner != "")
+	}
+	if auto != nil {
+		v := *auto
 		if v.Counting != nil {
 			c := *v.Counting
 			c.Caption = countingCaption(c)
@@ -208,18 +231,14 @@ func (s *Server) buildState(o stateOpts) State {
 		}
 		st.Auto = &v
 	}
-	if ops, ok := s.d.Accounts.(nextStartSelection); ok {
-		model, err := ops.NextStartModel()
+	if r.NextStartModel != nil {
+		model, err := r.NextStartModel()
 		if err != nil {
 			st.NextStartError = err.Error()
 		} else {
 			st.NextStartModel = &model
 		}
 	}
-	mover, _ := s.d.Accounts.(sessionMover)
-	owners, _ := s.d.Accounts.(interface {
-		SessionLogin(id string) (string, string)
-	})
 	sv := s.d.Sessions()
 	var stores map[string]string
 	if len(sv.Claude) > 0 {
@@ -237,11 +256,11 @@ func (s *Server) buildState(o stateOpts) State {
 				item.Store = "default"
 			}
 		}
-		if owners != nil && item.SessionID != "" {
-			item.Login, item.AccountNumber = owners.SessionLogin(item.SessionID)
+		if r.SessionLogin != nil && item.SessionID != "" {
+			item.Login, item.AccountNumber = r.SessionLogin(item.SessionID)
 		}
-		if mover != nil && item.SessionID != "" && item.Profile == "" && item.Group == "" {
-			moves, err := mover.SessionMoves(item.SessionID)
+		if r.SessionMoves != nil && item.SessionID != "" && item.Profile == "" && item.Group == "" {
+			moves, err := r.SessionMoves(item.SessionID)
 			item.Moves = moves
 			var ce *cerr.Error
 			if err != nil && !(len(moves) == 0 && errors.As(err, &ce) && ce.Kind == cerr.KindAccountNotFound) {
@@ -262,6 +281,33 @@ func (s *Server) buildState(o stateOpts) State {
 	return st
 }
 
+// stateReads is this build's StateReads: Deps.BuildReads's, or the Deps
+// façades themselves.
+func (s *Server) stateReads() StateReads {
+	if s.d.BuildReads != nil {
+		return s.d.BuildReads()
+	}
+	r := StateReads{Snapshot: s.d.Snapshot.AccountsSnapshot, CurrentLogin: s.d.CurrentLogin}
+	if s.d.Accounts != nil {
+		r.ListAccounts = s.d.Accounts.ListAccounts
+	}
+	if s.d.Auto != nil {
+		r.AutoView = s.d.Auto.View
+	}
+	if ops, ok := s.d.Accounts.(nextStartSelection); ok {
+		r.NextStartModel = ops.NextStartModel
+	}
+	if owners, ok := s.d.Accounts.(interface {
+		SessionLogin(id string) (string, string)
+	}); ok {
+		r.SessionLogin = owners.SessionLogin
+	}
+	if mover, ok := s.d.Accounts.(sessionMover); ok {
+		r.SessionMoves = mover.SessionMoves
+	}
+	return r
+}
+
 // stateJSON is buildState marshalled.
 func (s *Server) stateJSON(o stateOpts) ([]byte, error) {
 	return json.Marshal(s.buildState(o))
@@ -272,9 +318,9 @@ func (s *Server) stateJSON(o stateOpts) ([]byte, error) {
 // is store-only (empty, non-nil fetch set): the snapshot just paced the
 // network. A row the payload does not describe gets "" so the key is always
 // present when asked for.
-func (s *Server) enrichTokenStatus(rows []map[string]any) {
+func (s *Server) enrichTokenStatus(list func(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error), rows []map[string]any) {
 	byNum := map[string]string{}
-	payload, err := s.d.Accounts.ListAccounts(true, true, map[string]bool{})
+	payload, err := list(true, true, map[string]bool{})
 	if err != nil {
 		s.d.Logger("web: token status: " + err.Error())
 	} else if m, ok := payload.(map[string]any); ok {

@@ -14,7 +14,6 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
-	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // noFableRoom is why the rule sends a Fable session to the default login.
@@ -32,23 +31,25 @@ const fableRoomKey = "lastFableRoomWithoutLogin"
 // says why and where; hinted: it ends in A112's hint. It reads files only; s
 // is the default store.
 func fableSessionOnDefault(s *store.Store) (toDefault bool, notice string, hinted bool) {
-	view := s.WithoutLineageWrites()
-	view.OAuth, view.Log = nil, nil
+	return fableRoomRule(placementFor(s, false))
+}
+
+// fableRoomRule is fableSessionOnDefault on p's inputs.
+func fableRoomRule(p *placementInputs) (toDefault bool, notice string, hinted bool) {
+	view := p.view
 	room := reporting.ReadFableRoom(view)
 	if room.Room {
 		return false, "", false
 	}
-	data, err := view.SequenceForUpdate()
-	if err != nil {
+	login := p.login("", view)
+	if login.err != nil {
 		return false, "", false
 	}
-	num, email, org, err := verifiedLoginOwner(view, data, "default")
-	if err != nil {
+	if _, _, _, err := login.owner.of("default"); err != nil {
 		return false, "", false
 	}
 	now := view.Clk.Now()
-	entry := view.Usage.Entries(map[string]usage.Identity{num: {Email: email, OrgUUID: org}})[num]
-	if limits, _ := modelLimitWindows(entry, "fable", now); len(limits) > 0 {
+	if limits, _ := modelLimitWindows(login.entry, "fable", now); len(limits) > 0 {
 		return false, "", false
 	}
 	notice = "Fable store: " + noFableRoom
@@ -102,9 +103,7 @@ func placeFableSessions(sw *core.Switcher) {
 			if rec.Family != "fable" || rec.Wanted != "" || !autoSwitchOn(root) {
 				return nil
 			}
-			view := sw.Store.WithoutLineageWrites()
-			view.OAuth, view.Log = nil, nil
-			target, _, err := sessionDestination(view, rec, "fable", "fable", false)
+			target, _, err := sessionDestination(placementFor(sw.Store, false), rec, "fable", "fable", false)
 			if err != nil || target.dir == "" || target.dir == rec.Target || target.allocation != "" {
 				return err
 			}

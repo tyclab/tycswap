@@ -376,6 +376,7 @@ type Deps struct {
 
 	RemoteToken  string
 	AccountSetup func(string) error
+	BuildReads   func() StateReads // each state build's own reads (A117); nil: the façades above
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run

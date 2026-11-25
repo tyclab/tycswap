@@ -19,7 +19,6 @@ import (
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
-	"github.com/tyclab/tycswap/internal/usage"
 )
 
 func useCommand(prog string, args []string, streams ioStreams) int {
@@ -91,8 +90,8 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 	if requested == "" && (strings.TrimSpace(reportedModel) == "" || !sessionUUID.MatchString(id)) {
 		return result, nil
 	}
-	view := sw.Store.WithoutLineageWrites()
-	view.OAuth, view.Log = nil, nil
+	place := placementFor(sw.Store, false)
+	view := place.view
 	var repair []reporting.SessionLinkRecovery
 	if expected == "" {
 		source := reporting.SessionLinkRecovery{ObservedFamily: family}
@@ -136,7 +135,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		if explicit || wanted != mythosFamily {
 			rec.ResumeMythos = ""
 		}
-		target, identity, err := sessionDestination(view, rec, wanted, model, explicit)
+		target, identity, err := sessionDestination(place, rec, wanted, model, explicit)
 		if err != nil {
 			if explicit || expected != "" {
 				return err
@@ -224,7 +223,8 @@ func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, a
 	return err
 }
 
-func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, model string, explicit bool) (mythosPlacement, string, error) {
+func sessionDestination(p *placementInputs, rec *reporting.SessionLink, wanted, model string, explicit bool) (mythosPlacement, string, error) {
+	view := p.view
 	root, source := view.BackupDir(), rec.Target
 	var target mythosPlacement
 	if wanted == mythosFamily {
@@ -248,10 +248,11 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 			target, err = mythosTickPlacement(view, source, set, false)
 			return target, target.dir, err
 		}
-		target, err = mythosMovePlacement(view)
+		target, err = p.mythosMove()
 		return target, target.dir, err
 	}
 	target.dir = view.DefaultProfileDir()
+	key := ""
 	if wanted == "fable" {
 		if source != paths.FableStoreDir(root) {
 			// A running session cannot take ownership of a login reserved for native recovery.
@@ -267,18 +268,18 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 				return target, "", cerr.Validation("the Fable login is reserved for a parked or recovered native session")
 			}
 		}
-		st := view.FableStore()
+		st := p.fableStore()
 		if st.Usable {
-			_, toDefault, err := fableStartsOnDefault(&core.Switcher{Store: view}, "")
+			toDefault, err := p.startsOnDefault()
 			if err != nil {
 				return target, "", err
 			}
 			held := explicit || rec.Wanted == "fable"
 			if !toDefault && !held {
-				toDefault, _, _ = fableSessionOnDefault(view)
+				toDefault = p.roomOnDefault()
 			}
 			if !toDefault {
-				target.dir = paths.FableStoreDir(root)
+				target.dir, key = paths.FableStoreDir(root), "fable"
 				view, err = view.ForFable()
 				if err != nil {
 					return target, "", err
@@ -293,41 +294,60 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	if source == target.dir && !explicit {
 		return target, "", nil
 	}
-	data, err := view.SequenceForUpdate()
+	login := p.login(key, view)
+	if login.err != nil {
+		return target, "", login.err
+	}
+	num, email, org, err := login.owner.of(wanted)
 	if err != nil {
 		return target, "", err
 	}
-	num, email, org, err := verifiedLoginOwner(view, data, wanted)
-	if err != nil {
-		return target, "", err
-	}
-	id := usage.Identity{Email: email, OrgUUID: org}
-	entry := view.Usage.Entries(map[string]usage.Identity{num: id})[num]
-	if limits, _ := modelLimitWindows(entry, model, view.Clk.Now()); len(limits) > 0 {
+	if limits, _ := modelLimitWindows(login.entry, model, view.Clk.Now()); len(limits) > 0 {
 		return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
 	}
-	target.number, target.name = num, store.AccountNameFrom(data, num)
-	if models, set := store.ModelsFrom(data, num); set && (model == "opus" || model == "fable") && !slices.Contains(models, model) {
+	target.number, target.name = num, store.AccountNameFrom(login.data, num)
+	if models, set := store.ModelsFrom(login.data, num); set && (model == "opus" || model == "fable") && !slices.Contains(models, model) {
 		target.allocation = strings.Join(models, ", ")
 	}
 	return target, store.AccountIdentityDigest(email, org), nil
 }
 
+// loginOwner is the account a login's credential names, as placement judges
+// it; of says which login was asked about.
+type loginOwner struct {
+	num, email, org string
+	unverified      bool
+	err             error
+}
+
+func (o loginOwner) verified() bool { return !o.unverified && o.err == nil }
+
+func (o loginOwner) of(wanted string) (num, email, org string, err error) {
+	switch {
+	case o.unverified:
+		return "", "", "", cerr.Validation("cannot verify the current %s login for the session", wanted)
+	case o.err != nil:
+		return "", "", "", o.err
+	}
+	return o.num, o.email, o.org, nil
+}
+
 // verifiedLoginOwner is the enabled account whose login view's store holds,
 // resolved from the credential itself: neither the shared config nor the
 // last install is evidence enough (DESIGN A109).
-func verifiedLoginOwner(view *store.Store, data *store.SequenceData, wanted string) (num, email, org string, err error) {
+func verifiedLoginOwner(view *store.Store, data *store.SequenceData) loginOwner {
 	owner := view.ResolveOwnerSlot(data)
 	if owner.Slot == "" || view.AccountKindFor(owner.Slot) == "oauth" && (owner.Source == store.SourceConfig || owner.Source == store.SourceLastInstall) {
-		return "", "", "", cerr.Validation("cannot verify the current %s login for the session", wanted)
+		return loginOwner{unverified: true}
 	}
-	if num, email, org, err = view.ResolveAccountFrom(data, owner.Slot); err != nil {
-		return "", "", "", err
+	num, email, org, err := view.ResolveAccountFrom(data, owner.Slot)
+	if err != nil {
+		return loginOwner{err: err}
 	}
 	if store.DisabledFrom(data, num) {
-		return "", "", "", cerr.Validation("Account-%s is disabled", num)
+		return loginOwner{err: cerr.Validation("Account-%s is disabled", num)}
 	}
-	return num, email, org, nil
+	return loginOwner{num: num, email: email, org: org}
 }
 
 func checkLinkedSession(id, model, actor string) string {
@@ -355,11 +375,15 @@ func explicitSessionModel(store, family string) string {
 // sessionMoveChoices previews explicit use against the current binding. The command
 // checks it again under both store locks when the operator chooses a destination.
 func sessionMoveChoices(sw *core.Switcher, id string) ([]string, error) {
+	return placementFor(sw.Store, false).moveChoices(id)
+}
+
+// moveChoices is sessionMoveChoices on p's inputs.
+func (p *placementInputs) moveChoices(id string) ([]string, error) {
 	if runtime.GOOS != "linux" || !sessionUUID.MatchString(id) {
 		return nil, cerr.AccountNotFound("session has no linked login binding")
 	}
-	view := sw.Store.WithoutLineageWrites()
-	view.OAuth, view.Log = nil, nil
+	view := p.view
 	rec, err := reporting.InspectSessionLink(view.BackupDir(), id, view.Clk.Now())
 	if err != nil {
 		return nil, err
@@ -369,7 +393,7 @@ func sessionMoveChoices(sw *core.Switcher, id string) ([]string, error) {
 	var diagnostics, reasons []error
 	seen := make(map[string]bool)
 	for _, dest := range []string{"mythos", "fable", "default"} {
-		target, _, err := sessionDestination(view, &rec, dest, explicitSessionModel(dest, rec.Family), true)
+		target, _, err := sessionDestination(p, &rec, dest, explicitSessionModel(dest, rec.Family), true)
 		if err == nil {
 			if target.dir == rec.Target {
 				continue
