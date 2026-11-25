@@ -1,13 +1,13 @@
-# Reruns the jobs of a CI or Release run that found no runner (cancelled
-# before any step: GitHub's runner shortage, DESIGN A119); never a job that
-# ran and failed, a pull request run a newer push replaced, or an attempt
-# already rerun. Each rerun's completion comes back here until the job has
-# run or GitHub refuses (at most 50 reruns per run, within 30 days).
+# Reruns the jobs of a CI, macOS or Release run that found no runner
+# (cancelled before any step, DESIGN A119, A121); never a job that ran and
+# failed, a superseded pull request run or an attempt already rerun. Each
+# rerun's completion comes back here, up to GitHub's 50 reruns in 30 days;
+# the chain CI or macOS, Release, Retry stays within workflow_run's limit.
 name: Retry
 
 on:
   workflow_run:
-    workflows: [CI, Release]
+    workflows: [CI, macOS, Release]
     types: [completed]
 
 permissions: {}

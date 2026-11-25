@@ -10534,3 +10534,201 @@ route), `TestMythosResumeReturnsToItsRecordedLogin`,
 `TestMythosStartLoginSeedsTheSelectionWithItsRankedChoice`,
 `TestMythosStartWithAFailedLinkTakesNoStartLogin` and
 `TestMythosStartTakesAStartLoginWithRoomFirst`.
+
+## A121. Every merge that adds an entry releases it, and a missing Mac runner delays nothing
+
+**Why.** Under A119 a merge was released only when its pull request renamed
+`## Unreleased` to `## vX.Y.Z` and put an empty `## Unreleased` above it. The
+operator: "automatic should mean automatic not ad another manuial bullshit
+chore". Naming the version was that chore; the entry a pull request writes is
+all a release needs. And the Release workflow started when the whole CI
+workflow completed, so a `macos` job queued for a Mac runner that never came
+held v0.24.0 back about 15 minutes; the ruling: "Don't wait" for a missing
+macOS runner, while a macOS job that ran and failed still blocks.
+
+**The file.** `CHANGELOG.md` has one top section, `## Since v0.24.1`
+(`release.TopHeading`), first and never renamed: every entry in it came after
+v0.24.1, and the GitHub release of each version lists which of them it
+carries. Below it stand `## v0.24.1`, `## v0.24.0` and `## v0.23.3 and
+earlier`, frozen. A heading that names a version would need an edit on every
+release, and one without a reference point (`## Changes`) would not say
+where the history below starts. An entry is a top-level list item: a line
+starting with `- ` outside a fenced block and every line up to the next such
+line or heading (`release.Entry`); entries are told apart by their text with
+trailing white space dropped, and counted, so two equal entries are two.
+
+**What a merge releases.** `release.PendingAt(commit)`: the entries of the
+commit's `CHANGELOG.md` that the `CHANGELOG.md` at the newest `v*` tag
+reachable from its first parent lacks, in file order, are the release notes.
+The version is that tag with the patch number raised when every new entry
+starts with `**Fixed:**`, else the minor number; never a major one
+(`release.NextVersion`). No new entry: nothing is released (a CI-only or
+test-only merge). The entries of every section count, not the top one only:
+for a file the check admits the new ones stand in the top section anyway,
+and for the files before A121 it makes v0.24.1's merge compute v0.24.1 and a
+hand-pushed or dispatched old tag get the entries it adds.
+
+**The pull request check.** `release.CheckChange(head, base, tagged, since)`
+runs as `make release-check` (against `origin/main`) and in CI's `test` job
+(`RELEASE_BASE=HEAD^1`). It prints `Merging this releases v0.25.0 (minor over
+v0.24.1: not every new entry is **Fixed:**), with this entry as its notes:`
+and the entries, or `Merging this releases nothing: CHANGELOG.md has no entry
+that v0.24.1 lacks.` It fails only on: a malformed file (A119's heading rules,
+with the top section where `## Unreleased` stood); `## Unreleased` (`line N:
+## Unreleased is gone (DESIGN A121): move its entries to the top of ## Since
+v0.24.1 and delete the heading; …`, which is what an open pull request from
+before A121 meets once it merges main); a version heading main does not have
+(`… names a version, which a merge no longer does …`); an entry above the
+top section; text in the top section that starts no entry, or an item marked
+`*` or `+`; a change to or removal of a history section; and a change to or
+removal of an entry main's top section has, named as `released in vX.Y.Z`
+when the newest tag has it and as one `main's next release carries`
+otherwise. A merged entry is frozen before its release too: whether a later
+tag carries an earlier merge's entries is decided by their words. Where in
+the top section a new entry stands is not checked; the notes follow the file.
+
+**Merges released out of order.** The merge's Release run may come after a
+later merge's. `release.MergeAt(commit)` reads, besides `PendingAt`, a `v*`
+tag on the commit (its release, whatever its name) and the tags on later
+commits (`git tag --contains`): when one of them has every new entry of the
+commit, that release carries them and the run does nothing, quietly; a tag
+of the computed name on such a commit is no error. So B released before A
+(B's first parent) carries A's entries too, with the version their union
+gets, and A's run then stops; C before B before A likewise. A name taken by
+a commit that neither is the merge nor carries its entries is an error.
+
+**The tag job claims the version.** Two Release runs can decide at once: the
+CI and macOS runs of one merge, or the runs of two merges. `release.ClaimTag`
+in the `tag` job fetches the tags, runs `MergeAt` again and pushes the tag;
+when another run's push took the name meanwhile (`TagElsewhereError`), it
+fetches and computes again, so the version moves past an earlier commit's
+tag, and a later commit's tag that carries the entries ends the job with
+nothing to release. A tag another run put on this commit leaves the release
+to that run in attempt 1 and is finished by a rerun. The job's outputs
+`tag` and `release` replace `decide`'s tag in the builds and `publish`, which
+run only when `release` is true or the job was skipped (a rerun finishing a
+tagged commit). The loop repeats only when a new tag appeared, so it ends.
+
+**macOS on its own.** The `macos` job moved out of `ci.yml` into
+`.github/workflows/macos.yml` (workflow `macOS`) with the same triggers,
+steps, `contents: read` and concurrency expression (per commit on main, per
+ref with cancel for pull requests); its job id and so its check run's name
+stay `macos`. Ruleset 27211563 requires the contexts `test`, `windows` and
+`macos` with no `integration_id`, and GitHub matches a required check by
+that name, whatever workflow produced it.
+
+**The gate.** Release starts on `workflow_run` for CI and macOS. `decide`
+reads the newest push run of each on the merge commit
+(`GET /actions/workflows/{file}/runs?head_sha=…&event=push`): CI's latest
+attempt, every attempt of macOS (`release.ReleaseGate`, `GateRelease`).
+`test` and `windows` not completed, not started yet, or found no runner:
+wait; one that ended otherwise: block. `macos` passed, has no run on the
+commit, is queued with no step started (a job not listed yet in a queued run
+too), or found no runner: release now, unless the last attempt in which it
+ran did not pass, which blocks (the latest found no runner) or waits (the
+latest is a queued rerun, whose completion decides). `macos` started and
+running: wait; its completion starts Release again. `macos` ended otherwise
+(failed, cancelled while running): block. A block outweighs a wait. CI has
+no run on the commit: wait. Whichever workflow completes second decides with
+both known. When macOS completes first, its run waits on CI and CI's
+completion decides; when macOS never ran for the commit, CI's completion
+releases. When both complete within a run's decision time, both runs plan
+the release and the tag job leaves it to the one that pushed the tag. A
+macOS job that ran and failed after the release was decided (it was queued
+then) does not take the release back, as under A119 for a job without a
+runner; the pull request had passed `macos`.
+
+**Retry** watches CI, macOS and Release. The `workflow_run` chain is at most
+CI or macOS (push), Release, Retry: GitHub runs "A → B → C → D" and stops at
+E. A rerun is the same run with a new attempt, keeping its trigger and its
+place in the chain.
+
+**By hand.** A tag pushed by hand builds a draft, and a dispatch publishes a
+tag's release, as under A119; the notes of either are the entries the tag's
+commit adds over the newest tag reachable from its first parent
+(`release.NotesAt`), and with none the draft keeps the placeholder.
+`releasectl decide` still accepts `--ci-run` and `--ci-attempt`, and `tag`
+`--tag`, so a rerun of a Release run started before A121 finds its flags.
+
+**Holding a release back** is not in the normal path, and nothing needs it:
+a change that must not ship is reverted by the next pull request, whose
+release then carries both entries. Should a merge ever have to wait, disable
+the Release workflow before its CI completes (`gh workflow disable
+release.yml`); once enabled again, the next merge's release carries every
+entry no tag has, or a rerun of CI on the newest merge commit starts Release
+for it.
+
+**The transition.** This change's merge commit is decided by its own code
+(Release checks out the default branch), while its first parent's file still
+has `## Unreleased` above `## v0.24.1`: the check passes it and the merge
+releases its entry over v0.24.1 as v0.25.0 (not a fix). Had v0.24.1 not been
+tagged by then, the release would carry v0.24.1's entry too and v0.24.1's
+run would then stop (`TestTheTransitionMerge`).
+
+**GitHub's documented behaviour relied on**, besides A119's. Rulesets
+(REST, required status checks): `context`, "The status check context name
+that must be present on the commit"; `integration_id`, "The optional
+integration ID that this status check must originate from". About protected
+branches: "make sure that job names are unique across all workflows", since
+the same job name in several workflows makes status check results ambiguous;
+troubleshooting required status checks: "If a check and a commit status have
+the same name, both must pass when that name is required". About status
+checks: "GitHub Actions generates checks, not commit statuses, when
+workflows are run". Not stated there in so many words, and observed: a job
+without `name` reports a check run named by its id (`test`, `windows`,
+`macos` on 4eaee2d, app `github-actions`, one check suite per workflow run).
+`workflow_run`: "If you specify multiple `workflows` for the `workflow_run`
+event, only one of the workflows needs to run"; "if you attempt to trigger
+five workflows (named `B` to `F`) to run sequentially after an initial
+workflow `A` has run (that is: `A` → `B` → `C` → `D` → `E` → `F`), workflows
+`E` and `F` will not be run". List workflow runs for a workflow: `workflow_id`,
+"You can also pass the workflow file name as a string"; `head_sha`, "Only
+returns workflow runs that are associated with the specified head_sha";
+`event`. Workflow jobs: `status` is one of `queued`, `in_progress`,
+`completed`, `waiting`, `requested`, `pending`; a step's `started_at` is
+"string or null". Observed: a step's `started_at` is null until it starts, a
+rerun attempt's job listing carries the jobs it did not rerun with their
+earlier results (run 45598548351 attempt 3), and a job queued for a Mac has
+status `queued`, no runner and no steps (Release run 45694616515's
+`darwin`).
+
+**Rejected.** A bot commit that moves entries under a version heading after
+the merge (a second commit per release, and the merge commit would not be
+the release's). A version written by the pull request with a computed
+default (still a field to fill). Holding the CI-triggered run until macOS
+completes (the wait the ruling forbids). A concurrency group around tagging
+(a third run cancels the pending second, with the no-runner signature).
+Reading only the completed attempt of the triggering run: with two
+workflows the other one's state is needed anyway, and a rerun started
+meanwhile is in progress, so its completion decides.
+
+**Limits.** An entry reworded after its merge is refused, so a correction
+is a new entry. A Release run started
+before this change whose `tag` job ran after it would tag the computed
+version, not the named one, and its builds would not find their tag; no
+pull request was open when this change was written.
+
+**Supersedes** in A119: the pull request decides (the version heading,
+`CheckVersion`, `## Unreleased`), two claims of one version (no version is
+claimed), `VersionAt` and the gate on CI's completed attempt
+(`GateCI`, `GateCIAttempts`, `CIGate`), a tag elsewhere always being an
+error, the notes as the tag commit's version section, and the rejection of
+"a release on every merge with a guessed bump" (the bump is a stated rule
+now). Unchanged: tagging (annotated `tycswap vX.Y.Z`, `github-actions[bot]`),
+publishing with Linux, Windows, `SHA256SUMS` and the notes in one step,
+macOS attached later, the Retry rules, reruns of a half-done release,
+`make_latest`, the update client's wait for its build, and the credentials.
+
+**Tests** (`release`): `TestParseSectionsAndEntries`, `TestEntries`,
+`TestTheRepositoryChangelogParses` (with the layout), `TestNewEntries`,
+`TestNextVersion`, `TestCheckChange` (each refusal and its message),
+`TestCheckCountsEveryProblem`, `TestTheRepositoryChangelogOverV0241`;
+`TestGateRelease` on the recorded listings (macOS passed, without a runner,
+failed, cancelled while running) and Release run 45694616515 (`darwin`
+queued, `linux-windows` running) for queued and running macOS;
+`TestReleaseGateReadsBothWorkflows`; `TestPendingAtAndNotesAt`;
+`TestMergeOrders` (A then B, B then A, both fixes, C then B then A, a merge
+without an entry), `TestTagRaces` (a push between a run's look and its push,
+either way round, through a `pre-push` hook; the CI and macOS runs of one
+merge; a name on an unrelated commit) and `TestTheTransitionMerge`, on git
+repositories; `TestDecide`'s carried cases.

@@ -1,16 +1,18 @@
-# A release for the version a merge names (DESIGN A119). When CI completes on
-# a merge to main whose CHANGELOG.md names a new version, the merge commit is
-# tagged once test and windows passed there (macos passed or found no runner)
-# and published with that version's section as its notes: Linux and Windows
-# with SHA256SUMS at once, macOS attached when a Mac has built it. A tag
-# pushed by hand builds a draft, as before; a dispatch with a tag finishes and
-# publishes that tag's release. Every decision is internal/release's
-# (releasectl); the Retry workflow reruns a job that found no runner.
+# A release for every merge that adds CHANGELOG.md entries (DESIGN A119,
+# A121). When CI or macOS completes on a merge to main, the entries the
+# merge commit has over the newest tag before it are released under a
+# computed version: the commit is tagged once test and windows passed there
+# (macos passed, has not started or found no runner) and published with
+# those entries as its notes: Linux and Windows with SHA256SUMS at once,
+# macOS attached when a Mac has built it. A tag pushed by hand builds a
+# draft, as before; a dispatch with a tag finishes and publishes that tag's
+# release. Every decision is internal/release's (releasectl); the Retry
+# workflow reruns a job that found no runner.
 name: Release
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, macOS]
     types: [completed]
     branches: [main]
   push:
@@ -26,8 +28,8 @@ permissions: {}
 
 jobs:
   decide:
-    # Only CI on this repository's own pushes to main: workflow_run also
-    # reports pull request runs, from forks too.
+    # Only CI and macOS on this repository's own pushes to main:
+    # workflow_run also reports pull request runs, from forks too.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.event == 'push' &&
@@ -59,21 +61,25 @@ jobs:
           EVENT: ${{ github.event_name }}
           TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
           COMMIT: ${{ github.event.workflow_run.head_sha }}
-          CI_RUN: ${{ github.event.workflow_run.id }}
-          CI_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: >-
           go run ./internal/release/releasectl decide --event "$EVENT" --tag "$TAG"
-          --commit "$COMMIT" --ci-run "${CI_RUN:-0}" --ci-attempt "${CI_ATTEMPT:-0}"
-          --attempt "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          --commit "$COMMIT" --attempt "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   # The one job that writes a tag: annotated, on the merge commit, pushed with
   # this run's token (which starts no push workflow, hence the builds below).
+  # It computes the version again after fetching the tags: when another
+  # run's tag took the name meanwhile, the version moves past it, and when
+  # another run tagged this commit or a later one carrying its entries, that
+  # run releases them and this one stops here.
   tag:
     needs: decide
     if: needs.decide.outputs.create-tag == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.claim.outputs.tag }}
+      release: ${{ steps.claim.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,10 +88,12 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-      - env:
-          TAG: ${{ needs.decide.outputs.tag }}
+      - id: claim
+        env:
           COMMIT: ${{ needs.decide.outputs.commit }}
-        run: go run ./internal/release/releasectl tag --tag "$TAG" --commit "$COMMIT"
+        run: >-
+          go run ./internal/release/releasectl tag --commit "$COMMIT"
+          --attempt "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
   # Linux and Windows are pure Go: the Windows tray speaks Win32 through
   # golang.org/x/sys, and Linux's through D-Bus.
@@ -93,16 +101,17 @@ jobs:
     needs: [decide, tag]
     if: >-
       ${{ !cancelled() && needs.decide.outputs.linux-windows == 'true' &&
-      (needs.tag.result == 'success' || needs.tag.result == 'skipped') }}
+      (needs.tag.result == 'skipped' ||
+      (needs.tag.result == 'success' && needs.tag.outputs.release == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      TAG: ${{ needs.decide.outputs.tag }}
+      TAG: ${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ needs.decide.outputs.tag }}
+          ref: refs/tags/${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
@@ -135,16 +144,17 @@ jobs:
     needs: [decide, tag]
     if: >-
       ${{ !cancelled() && needs.decide.outputs.darwin == 'true' &&
-      (needs.tag.result == 'success' || needs.tag.result == 'skipped') }}
+      (needs.tag.result == 'skipped' ||
+      (needs.tag.result == 'success' && needs.tag.outputs.release == 'true')) }}
     runs-on: macos-latest
     permissions:
       contents: read
     env:
-      TAG: ${{ needs.decide.outputs.tag }}
+      TAG: ${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ needs.decide.outputs.tag }}
+          ref: refs/tags/${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
           persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
@@ -171,10 +181,11 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # Attaches Linux and Windows with SHA256SUMS and the notes, then publishes:
-  # nothing is visible before all of them are there.
+  # Attaches Linux and Windows with SHA256SUMS and the notes (the entries the
+  # commit adds over the tag before it), then publishes: nothing is visible
+  # before all of them are there.
   publish:
-    needs: [decide, linux-windows]
+    needs: [decide, tag, linux-windows]
     if: ${{ !cancelled() && needs.linux-windows.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -194,7 +205,7 @@ jobs:
           path: dist
       - env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.decide.outputs.tag }}
+          TAG: ${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
           COMMIT: ${{ needs.decide.outputs.commit }}
           PUBLISH: ${{ needs.decide.outputs.publish }}
         run: go run ./internal/release/releasectl publish --tag "$TAG" --commit "$COMMIT" --dist dist --publish="$PUBLISH"
@@ -202,7 +213,7 @@ jobs:
   # Attaches macOS to the release, published or not, and completes
   # SHA256SUMS; it never publishes, and writes notes into a draft only.
   attach-darwin:
-    needs: [decide, darwin]
+    needs: [decide, tag, darwin]
     if: ${{ !cancelled() && needs.darwin.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -222,6 +233,6 @@ jobs:
           path: dist
       - env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.decide.outputs.tag }}
+          TAG: ${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
           COMMIT: ${{ needs.decide.outputs.commit }}
         run: go run ./internal/release/releasectl publish --tag "$TAG" --commit "$COMMIT" --dist dist --publish=false

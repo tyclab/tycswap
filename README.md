@@ -1542,12 +1542,15 @@ along with the backup store.
 
 ## Releases
 
-A pull request releases by naming its version: it renames `## Unreleased` in
-[CHANGELOG.md](CHANGELOG.md) to `## vMAJOR.MINOR.PATCH`, and that section is
-the release's notes. When CI has passed on the merge commit, the Release
-workflow tags it and publishes the release; a merge that names no new version
-releases nothing. `make release-check` runs the check CI runs on every pull
-request. The steps, and what to do when a release stops, are in
+Every merge that adds an entry to [CHANGELOG.md](CHANGELOG.md) (at the top of
+`## Since v0.24.1`) is released: the entries the newest tag lacks are the
+notes, and the version is that tag's with the patch number raised when every
+one of them is a `**Fixed:**` entry, else the minor number. When CI has
+passed on the merge commit (and `macos`, unless no Mac runner has taken it),
+the Release workflow tags it and publishes the release; a merge without an
+entry releases nothing. `make release-check` runs the check CI runs on every
+pull request and prints what the merge would release. The steps, and what to
+do when a release stops, are in
 [docs/agents/releasing.md](docs/agents/releasing.md).
 
 ## License

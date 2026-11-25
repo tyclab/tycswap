@@ -56,17 +56,53 @@ func (g Git) Tags(merged string) ([]string, error) {
 	return strings.Fields(out), err
 }
 
+// NewestTag is the greatest v* tag reachable from rev, "" when there is
+// none or no such commit.
+func (g Git) NewestTag(rev string) (string, error) {
+	if g.Commit(rev) == "" {
+		return "", nil
+	}
+	tags, err := g.Tags(rev)
+	return Newest(tags), err
+}
+
+// TagsAt lists the v* tags on commit.
+func (g Git) TagsAt(commit string) ([]string, error) {
+	out, err := g.run("tag", "--list", "v*", "--points-at", commit)
+	return strings.Fields(out), err
+}
+
+// TagsContaining lists the v* tags on commit and on the commits after it.
+func (g Git) TagsContaining(commit string) ([]string, error) {
+	out, err := g.run("tag", "--list", "v*", "--contains", commit)
+	return strings.Fields(out), err
+}
+
+// FetchTags brings remote's v* tags in; remote's copy of a tag wins.
+func (g Git) FetchTags(remote string) error {
+	_, err := g.run("fetch", "--quiet", "--no-tags", remote, "+refs/tags/v*:refs/tags/v*")
+	return err
+}
+
 // Tagger is who annotates the release tags.
 const Tagger = "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
 
+// TagElsewhereError is CreateTag's answer when the tag's name is taken on
+// another commit.
+type TagElsewhereError struct{ Tag, At, Commit string }
+
+func (e *TagElsewhereError) Error() string {
+	return fmt.Sprintf("tag %s exists on %s, not on %s", e.Tag, short(e.At), short(e.Commit))
+}
+
 // CreateTag annotates commit as tag ("tycswap <tag>", as every release tag
 // is) and pushes it to remote. A tag already on commit, here or on remote,
-// is success; a tag on another commit is an error.
+// is success; a tag on another commit is a *TagElsewhereError.
 func (g Git) CreateTag(tag, commit, remote string) (created bool, err error) {
 	at := g.TagCommit(tag)
 	if at != "" {
 		if at != commit {
-			return false, fmt.Errorf("tag %s exists on %s, not on %s", tag, short(at), short(commit))
+			return false, &TagElsewhereError{tag, at, commit}
 		}
 	} else {
 		name, email, _ := strings.Cut(strings.TrimSuffix(Tagger, ">"), " <")
@@ -84,7 +120,7 @@ func (g Git) CreateTag(tag, commit, remote string) (created bool, err error) {
 		return false, pushErr
 	}
 	if at = g.TagCommit(tag); at != commit {
-		return false, fmt.Errorf("tag %s exists on %s, not on %s", tag, short(at), short(commit))
+		return false, &TagElsewhereError{tag, at, commit}
 	}
 	return false, nil
 }

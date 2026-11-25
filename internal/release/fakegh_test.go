@@ -25,11 +25,12 @@ type fakeGitHub struct {
 	releases map[int64]*fakeRelease
 	calls    []string
 
-	runs    map[int64]Run
-	jobs    map[string][]Job // "<run>/<attempt>"
-	newest  map[string]int64 // "<workflow>/<branch>/<event>"
-	reruns  []int64
-	rerunOK bool
+	runs     map[int64]Run
+	jobs     map[string][]Job // "<run>/<attempt>"
+	newest   map[string]int64 // "<workflow>/<branch>/<event>"
+	pushRuns map[string][]Run // "<workflow file>/<sha>": push runs on a commit
+	reruns   []int64
+	rerunOK  bool
 
 	// onCreate runs after a release is created, before the answer.
 	onCreate func()
@@ -56,7 +57,7 @@ type fakeSnapshot struct {
 
 func newFakeGitHub(t *testing.T) (*fakeGitHub, *Client) {
 	f := &fakeGitHub{t: t, nextID: 100, releases: map[int64]*fakeRelease{}, runs: map[int64]Run{}, jobs: map[string][]Job{},
-		newest: map[string]int64{}, published: map[string]fakeSnapshot{}, rerunOK: true}
+		newest: map[string]int64{}, pushRuns: map[string][]Run{}, published: map[string]fakeSnapshot{}, rerunOK: true}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f, &Client{API: f.srv.URL, Repo: "o/r", Token: "t", HTTP: f.srv.Client()}
@@ -286,6 +287,17 @@ func (f *fakeGitHub) serveActions(w http.ResponseWriter, r *http.Request, seg []
 			jobs = f.jobs[seg[5]+"/"+seg[7]]
 		}
 		f.reply(w, 200, map[string]any{"total_count": len(jobs), "jobs": jobs})
+	case len(seg) == 7 && seg[4] == "workflows" && seg[6] == "runs" && r.URL.Query().Get("head_sha") != "":
+		q := r.URL.Query()
+		runs, ok := f.pushRuns[seg[5]+"/"+q.Get("head_sha")]
+		if !ok && seg[5] == "absent.yml" {
+			f.reply(w, 404, map[string]string{"message": "Not Found"})
+			return
+		}
+		if q.Get("event") != "push" {
+			runs = nil
+		}
+		f.reply(w, 200, map[string]any{"total_count": len(runs), "workflow_runs": runs})
 	case len(seg) == 7 && seg[4] == "workflows" && seg[6] == "runs":
 		q := r.URL.Query()
 		id := f.newest[seg[5]+"/"+q.Get("branch")+"/"+q.Get("event")]

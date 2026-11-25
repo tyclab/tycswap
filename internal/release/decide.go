@@ -10,7 +10,7 @@ import (
 type Mode string
 
 const (
-	// ModeMerge: CI completed on a push to main; CHANGELOG.md decides.
+	// ModeMerge: CI or macOS completed on a push to main; CHANGELOG.md decides.
 	ModeMerge Mode = "merge"
 	// ModeTag: a person pushed a v* tag; it becomes a draft, as before.
 	ModeTag Mode = "tag"
@@ -22,14 +22,19 @@ const (
 type Facts struct {
 	Mode   Mode
 	Commit string // the merge commit, or the tag's commit
-	// Version is the release: CheckVersion's answer on the merge commit, or
-	// the tag pushed or named.
+	// Version is the release: on a merge commit the tag it carries, else the
+	// version its new entries get ("" for none); the tag pushed or named.
 	Version string
+	// Since is the newest tag before a merge commit, its entries' base.
+	Since string
 	// TagCommit is the commit tag Version points at, "" when there is none.
 	TagCommit string
+	// CarriedBy is a tag on a later commit that carries the merge commit's
+	// new entries, "" for none.
+	CarriedBy string
 	// Attempt is this Release run's attempt: 1 for a fresh run.
 	Attempt  int
-	HasNotes bool // the tag's commit's CHANGELOG.md has Version's section
+	HasNotes bool // the tag's commit adds entries over the tag before it
 	Gate     func() (Verdict, []string, error)
 	Missing  func() (Missing, error)
 }
@@ -66,15 +71,19 @@ func (p Plan) Write(w io.Writer) {
 		p.Tag, p.Commit, p.CreateTag, p.Publish, p.LinuxWindows, p.Darwin)
 }
 
-// Decide plans one Release run. A merge commit is tagged only when CI
-// passed on it (GateCI); a later fresh run for a tagged merge commit leaves
-// the release to the run that tagged it, and a rerun (attempt > 1) finishes
-// what is missing.
+// Decide plans one Release run. A merge commit that adds entries is tagged
+// only when CI passed on it (GateRelease); a merge commit whose entries a
+// later commit's tag carries is left alone; a later fresh run for a tagged
+// merge commit leaves the release to the run that tagged it, and a rerun
+// (attempt > 1) finishes what is missing.
 func Decide(f Facts, log io.Writer) (Plan, error) {
 	say := func(format string, args ...any) { fmt.Fprintf(log, format+"\n", args...) }
 	switch {
 	case f.Mode == ModeMerge && f.Version == "":
-		say("%s names no new version in CHANGELOG.md: nothing to release", short(f.Commit))
+		say("%s adds no entry to CHANGELOG.md over %s: nothing to release", short(f.Commit), tagOrNone(f.Since))
+		return Plan{}, nil
+	case f.Mode == ModeMerge && f.CarriedBy != "" && f.TagCommit != f.Commit:
+		say("the entries %s adds are released in %s, on a later commit: nothing to do", short(f.Commit), f.CarriedBy)
 		return Plan{}, nil
 	case f.Mode == ModeDispatch && f.TagCommit == "":
 		return Plan{}, fmt.Errorf("there is no tag %s", f.Version)
@@ -98,7 +107,7 @@ func Decide(f Facts, log io.Writer) (Plan, error) {
 			return Plan{}, fmt.Errorf("%s is not released: CI did not pass on %s (%s)", f.Version, short(f.Commit), strings.Join(why, "; "))
 		}
 		plan.CreateTag, plan.LinuxWindows, plan.Darwin = true, true, true
-		say("CI passed on %s: tagging and releasing %s", short(f.Commit), f.Version)
+		say("CI passed on %s: tagging and releasing %s over %s", short(f.Commit), f.Version, tagOrNone(f.Since))
 		return plan, nil
 	}
 	if f.Mode == ModeMerge && f.Attempt <= 1 {
@@ -123,4 +132,11 @@ func short(sha string) string {
 		return sha[:12]
 	}
 	return sha
+}
+
+func tagOrNone(tag string) string {
+	if tag == "" {
+		return "no tag"
+	}
+	return tag
 }

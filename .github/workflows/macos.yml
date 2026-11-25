@@ -1,0 +1,32 @@
+---
+# The macos job on its own, its check still named macos (DESIGN A121).
+name: macOS
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Each push to main keeps its own run, as CI's does (DESIGN A119).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # macOS builds internal/tray with cgo against Cocoa, the one place cgo is
+  # allowed (DESIGN A12, A35): the whole suite with the Objective-C, then
+  # the CGO_ENABLED=0 stub a machine without a C toolchain gets.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -count=1 ./...
+      - run: CGO_ENABLED=0 go build ./...

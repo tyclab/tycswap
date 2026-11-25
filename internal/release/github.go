@@ -273,6 +273,26 @@ func (c *Client) NewestRun(ctx context.Context, workflowID int64, branch, event 
 	return newest, err
 }
 
+// RunOn is the newest run of a workflow (by file name) for a push of sha;
+// its ID is 0 when there is none, or no such workflow on the default branch.
+func (c *Client) RunOn(ctx context.Context, workflow, sha string) (Run, error) {
+	var page struct {
+		Runs []Run `json:"workflow_runs"`
+	}
+	q := url.Values{"head_sha": {sha}, "event": {"push"}, "per_page": {"100"}}
+	err := c.getJSON(ctx, c.repoPath("/actions/workflows/%s/runs?%s", url.PathEscape(workflow), q.Encode()), &page)
+	if isStatus(err, http.StatusNotFound) {
+		return Run{}, nil
+	}
+	var newest Run
+	for _, r := range page.Runs {
+		if r.ID > newest.ID {
+			newest = r
+		}
+	}
+	return newest, err
+}
+
 // RerunFailedJobs reruns a run's failed and cancelled jobs and the jobs that
 // need them.
 func (c *Client) RerunFailedJobs(ctx context.Context, id int64) error {

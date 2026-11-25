@@ -9,9 +9,16 @@ import (
 )
 
 // gitRepos makes a bare origin and two clones with three commits, the
-// second and third carrying CHANGELOG.md; git's global and system
-// configuration stay out.
+// second and third carrying CHANGELOG.md (before and after A121); git's
+// global and system configuration stay out.
 func gitRepos(t *testing.T) (origin string, a, b Git, commits []string) {
+	t.Helper()
+	return gitHistory(t, "", v0241, since("- Every merge releases."))
+}
+
+// gitHistory is gitRepos with one commit on main per CHANGELOG.md text (""
+// for a commit without one).
+func gitHistory(t *testing.T, changelogs ...string) (origin string, a, b Git, commits []string) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not installed")
@@ -38,16 +45,16 @@ func gitRepos(t *testing.T) (origin string, a, b Git, commits []string) {
 	must(Git{dir}, "init", "--quiet", "--bare", "--initial-branch=main", origin)
 	a, b = Git{filepath.Join(dir, "a")}, Git{filepath.Join(dir, "b")}
 	must(Git{dir}, "clone", "--quiet", origin, a.Dir)
-	for i, text := range []string{"", v0233, introduced} {
-		name := "README"
-		if text != "" {
-			name = "CHANGELOG.md"
+	for i, text := range changelogs {
+		name := "CHANGELOG.md"
+		if text == "" {
+			name, text = "README", strings.Repeat("x", i+1)
 		}
-		if err := os.WriteFile(filepath.Join(a.Dir, name), []byte(text+strings.Repeat("x", i)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(a.Dir, name), []byte(text), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		must(a, "add", "-A")
-		must(a, "commit", "--quiet", "-m", "c")
+		must(a, "commit", "--quiet", "--allow-empty", "-m", "c")
 		commits = append(commits, must(a, "rev-parse", "HEAD"))
 	}
 	must(a, "push", "--quiet", "origin", "HEAD:main")
@@ -88,7 +95,7 @@ func TestGitReads(t *testing.T) {
 	if text, err := a.Changelog(commits[0]); err != nil || text != "" {
 		t.Errorf("a commit without CHANGELOG.md: %q, %v", text, err)
 	}
-	if text, err := a.Changelog(commits[2]); err != nil || !strings.HasPrefix(text, introduced) {
+	if text, err := a.Changelog(commits[2]); err != nil || !strings.HasPrefix(text, since("- Every merge releases.")) {
 		t.Errorf("CHANGELOG.md: %q, %v", text, err)
 	}
 	if _, err := a.run("tag", "v0.1.0", commits[0]); err != nil {
