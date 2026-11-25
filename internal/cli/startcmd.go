@@ -700,11 +700,18 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 	return snap, nil
 }
 
+// observeFableStartSnapshot is a test seam, nil in production: it is told of
+// every Fable start snapshot read.
+var observeFableStartSnapshot func()
+
 // readFableStartSnapshot is start's snapshot of the Fable store: the live
 // slot from backup or chain only, the candidates the marked accounts (or
 // account) in the Fable pool, counted on the Fable windows as the Fable tick
 // counts them. It makes no request.
 func readFableStartSnapshot(sw *core.Switcher, account string, native bool) (autoswitch.StartSnapshot, error) {
+	if observeFableStartSnapshot != nil {
+		observeFableStartSnapshot()
+	}
 	view := sw.Store.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
 	data, err := view.SequenceForUpdate()

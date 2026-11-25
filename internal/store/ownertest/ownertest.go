@@ -1,6 +1,7 @@
 // Package ownertest is test support: the credential-ownership fixture that the
 // read-count, freshness and equality tests share, and a counter of the
-// identity files read and the profiles whose live PIDs are scanned.
+// identity files read, the profiles whose live PIDs are scanned and the
+// roster reads.
 package ownertest
 
 import (
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +37,11 @@ type Options struct {
 	// store and marks every account able to continue Fable, where the
 	// platform has a Fable store.
 	Fable bool
+	// StartLogins marks every account a start login.
+	StartLogins bool
+	// Mythos marks these accounts for Mythos and gives each an independent
+	// Mythos login.
+	Mythos []string
 }
 
 // Fixture is what Build wrote. Account 1 is the live default login with a
@@ -49,6 +56,8 @@ type Fixture struct {
 	// Legacy is each former session profile's directory by account.
 	Legacy map[string]string
 	Group  string
+	// Mythos is each Options.Mythos account's Mythos login directory.
+	Mythos map[string]string
 }
 
 const farFuture = 4102444800000
@@ -86,7 +95,7 @@ func Build(t testing.TB, s *store.Store, opts Options) *Fixture {
 		opts.Accounts = 7
 	}
 	root := s.BackupDir()
-	f := &Fixture{Store: s, Emails: map[string]string{}, Orgs: map[string]string{}, Legacy: map[string]string{}, Group: groups.ProfileDir(root, groups.Opus)}
+	f := &Fixture{Store: s, Emails: map[string]string{}, Orgs: map[string]string{}, Legacy: map[string]string{}, Group: groups.ProfileDir(root, groups.Opus), Mythos: map[string]string{}}
 	accounts := map[string]any{}
 	var sequence []int
 	for n := 1; n <= opts.Accounts; n++ {
@@ -99,6 +108,12 @@ func Build(t testing.TB, s *store.Store, opts Options) *Fixture {
 			"added": "2026-01-01T00:00:00Z", "plan": "Max"}
 		if opts.Fable {
 			rec["fableContinue"] = true
+		}
+		if opts.StartLogins {
+			rec["startLogin"] = true
+		}
+		if slices.Contains(opts.Mythos, num) {
+			rec["mythos"] = true
 		}
 		accounts[num] = rec
 		sequence = append(sequence, n)
@@ -156,6 +171,10 @@ func Build(t testing.TB, s *store.Store, opts Options) *Fixture {
 		}
 		must(t, fable.Creds.WriteActive(Creds("fable-6")))
 	}
+	for _, num := range opts.Mythos {
+		f.Mythos[num] = store.MythosLoginDir(root, f.Emails[num], f.Orgs[num])
+		write(t, filepath.Join(f.Mythos[num], ccfile.CredentialsFileName), Creds("mythos-"+num))
+	}
 
 	now := float64(time.Now().Unix())
 	rows := map[string]any{}
@@ -187,12 +206,13 @@ func EndSessions(t testing.TB, dir string) {
 	must(t, os.RemoveAll(filepath.Join(dir, "sessions")))
 }
 
-// Counts is how often each identity file was read and each profile's live
-// PIDs were scanned since CountReads or Reset.
+// Counts is how often each identity file was read, each profile's live PIDs
+// were scanned and the roster was read since CountReads or Reset.
 type Counts struct {
 	mu       sync.Mutex
 	identity map[string]int
 	pids     map[string]int
+	roster   int
 }
 
 // CountReads counts through the ccfile and store seams until the test ends.
@@ -200,10 +220,17 @@ func CountReads(t testing.TB) *Counts {
 	t.Helper()
 	c := &Counts{}
 	c.Reset()
-	identity, pids := ccfile.ObserveIdentityRead, store.ObservePIDScan
+	identity, pids, roster := ccfile.ObserveIdentityRead, store.ObservePIDScan, store.ObserveRosterRead
 	ccfile.ObserveIdentityRead = func(path string) { c.add(c.identity, path) }
 	store.ObservePIDScan = func(dir string) { c.add(c.pids, dir) }
-	t.Cleanup(func() { ccfile.ObserveIdentityRead, store.ObservePIDScan = identity, pids })
+	store.ObserveRosterRead = func() {
+		c.mu.Lock()
+		c.roster++
+		c.mu.Unlock()
+	}
+	t.Cleanup(func() {
+		ccfile.ObserveIdentityRead, store.ObservePIDScan, store.ObserveRosterRead = identity, pids, roster
+	})
 	return c
 }
 
@@ -217,7 +244,7 @@ func (c *Counts) add(m map[string]int, key string) {
 func (c *Counts) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.identity, c.pids = map[string]int{}, map[string]int{}
+	c.identity, c.pids, c.roster = map[string]int{}, map[string]int{}, 0
 }
 
 // Most is the highest count of any one identity file and of any one profile.
@@ -225,6 +252,21 @@ func (c *Counts) Most() (identity, pids int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return most(c.identity), most(c.pids)
+}
+
+// Totals is the number of identity reads, live-PID scans and roster reads.
+func (c *Counts) Totals() (identity, pids, roster int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return total(c.identity), total(c.pids), c.roster
+}
+
+func total(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
 }
 
 func most(m map[string]int) int {
@@ -249,6 +291,7 @@ func (c *Counts) String() string {
 		lines = append(lines, fmt.Sprintf("  %s total %d over %d paths", kind, total, len(m)))
 	}
 	sort.Strings(lines)
+	lines = append(lines, fmt.Sprintf("  roster reads %d", c.roster))
 	return strings.Join(lines, "\n")
 }
 
