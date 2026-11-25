@@ -157,12 +157,10 @@ func TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook(t *testing.T) {
 			t.Fatalf("no hook move in the log: %s", readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")))
 		}
 	})
-	t.Run("a hook without a model leaves the move to the status line", func(t *testing.T) {
+	t.Run("a hook without a model moves it by the family start read", func(t *testing.T) {
 		_, rec, spent, room := mythosStartLoginFixture(t, false)
 		link := startOnStartLogin(t, rec, spent)
 		sessionStartHook(t, rec, link, "startup", startLoginSession, "")
-		requireLinkTarget(t, link, spent)
-		sessionStatus(t, link, startLoginSession, fixtureMythosModel, true)
 		requireLinkTarget(t, link, room)
 	})
 }
@@ -194,7 +192,8 @@ func TestMythosPrintModeSessionLeavesItsStartLogin(t *testing.T) {
 const previousStartLoginMythosEnv = "TYCSWAP_TEST_PREVIOUS_START_LOGIN_MYTHOS"
 
 // TestMythosStartLoginPreviousSession is the first run of startLoginSession
-// for recordedMythosSession, in a child process; alone it does nothing.
+// for recordedMythosSession, in a child process; alone it does nothing. On the
+// Fable store it is a Fable session.
 func TestMythosStartLoginPreviousSession(t *testing.T) {
 	dir := os.Getenv(previousStartLoginMythosEnv)
 	if dir == "" {
@@ -205,12 +204,16 @@ func TestMythosStartLoginPreviousSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reporting.BindSessionLink(root, startLoginSession, link, mythosFamily, "mythos/"+filepath.Base(dir), time.Now()); err != nil {
+	family, scope := mythosFamily, "mythos/"+filepath.Base(dir)
+	if dir == fableStoreDir() {
+		family, scope = "fable", "fable"
+	}
+	if err := reporting.BindSessionLink(root, startLoginSession, link, family, scope, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// recordedMythosSession leaves startLoginSession as its first run on the
+// recordedMythosSession leaves startLoginSession as its first run on the login
 // Mythos login dir leaves it: bound there by a process that has ended.
 func recordedMythosSession(t *testing.T, dir string) {
 	t.Helper()

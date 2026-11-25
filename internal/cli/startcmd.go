@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -26,6 +27,7 @@ import (
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 var startExec = launch.Exec
@@ -305,9 +307,17 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			childEnv = withFableStore(env, dir)
 		} else {
 			env = withoutFableStore(env, mythosSessionDir)
+			if linked && linkErr == nil {
+				// The link comes before the selection: a Fable start leaves the
+				// Fable store alone only with a link of its own (DESIGN A122).
+				link, linkErr = reporting.CreateSessionLink(root, paths.GetClaudeConfigHome())
+			}
 			var code int
-			childEnv, hold, family, code = startSharedLogin(env, args, root, storeDir, parsed.account, model, savedTarget, native, streams)
+			childEnv, hold, family, code = startSharedLogin(env, args, root, storeDir, parsed.account, model, savedTarget, native, link != "", streams)
 			if code != 0 {
+				if link != "" {
+					_ = os.Remove(link)
+				}
 				return code
 			}
 		}
@@ -315,6 +325,10 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			target := envValue(childEnv, secureStorageEnv)
 			if target == "" {
 				target = paths.GetClaudeConfigHome()
+			}
+			if current, _ := os.Readlink(link); link != "" && current != target {
+				_ = os.Remove(link)
+				link = ""
 			}
 			if link == "" && linkErr == nil {
 				link, linkErr = reporting.CreateSessionLink(root, target)
@@ -382,7 +396,9 @@ func hasSessionLinkAccounts(root string) bool {
 	return err == nil && len(data.Accounts) != 0
 }
 
-func startSharedLogin(env, args []string, root, storeDir, account, model, savedTarget string, native bool, streams ioStreams) (childEnv []string, hold, family string, code int) {
+// startSharedLogin selects the shared login a session starts on. ownLink: the
+// session has a link of its own, which can move it later (DESIGN A122).
+func startSharedLogin(env, args []string, root, storeDir, account, model, savedTarget string, native, ownLink bool, streams ioStreams) (childEnv []string, hold, family string, code int) {
 	fable, hasFableLogins := startFableStore(root)
 	var onFable bool
 	var notice string
@@ -395,11 +411,16 @@ func startSharedLogin(env, args []string, root, storeDir, account, model, savedT
 		startNotice(streams.err, notice)
 	}
 	if onFable {
-		var toDefault bool
-		hold, toDefault = startSelectFable(account, streams.err, "", native)
+		var toDefault, asIs bool
+		hold, toDefault, asIs = startSelectFable(account, streams.err, "", native, ownLink)
 		if toDefault {
 			childEnv = withoutFableStore(env, storeDir)
 			onFable = false
+		}
+		if asIs {
+			// The session only comes up there: no selection, no allocation
+			// question; its hook places it (DESIGN A122).
+			return childEnv, "", "", 0
 		}
 	}
 	if !onFable {
@@ -563,12 +584,16 @@ func withStartVar(env []string, name, value string) []string {
 // one. With none of them in the pool, or without account by the Fable
 // placement rule, toDefault is true: the session starts on the default login.
 // Without marks, or with auto-switch off and no account, it changes nothing
-// (DESIGN A105, A112). Its last notice names the accounts that need a Fable
-// sign-in, unless the rule's notice ended in A112's hint (A115).
-func selectFableStartLogin(account string, stderr io.Writer, token string, native bool) (hold string, toDefault bool) {
+// (DESIGN A105, A112). A session with a link of its own (ownLink) and no
+// account leaves the Fable store as it is while a login sits on a start login
+// with room: the store itself, else the default login, where asIs says the
+// session only comes up, with no selection there, and its link moves it
+// (A122). Its last notice names the accounts that need a Fable sign-in, unless
+// the rule's notice ended in A112's hint (A115).
+func selectFableStartLogin(account string, stderr io.Writer, token string, native, ownLink bool) (hold string, toDefault, asIs bool) {
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	hinted := false
 	defer func() {
@@ -578,7 +603,7 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 	}()
 	a, err := newFableAdapter(sw, sw.Log)
 	if err != nil {
-		return "", false
+		return "", false, false
 	}
 	if account != "" {
 		data, readErr := sw.SequenceForUpdate()
@@ -586,28 +611,42 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 			account, _, _, readErr = sw.ResolveAccountFrom(data, account)
 		}
 		if readErr != nil {
-			return "", false
+			return "", false, false
 		}
 	}
 	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account, native) }
 	snap, toDefault, err := fableStartsOnDefault(sw, account)
 	if err != nil {
 		reportStartSelection(sw, stderr, "Fable store: Could not select a start login: "+err.Error()+"; continuing with the current login.")
-		return "", false
+		return "", false, false
 	}
 	if toDefault {
 		reportStartSelection(sw, stderr, noFableStartLogin+"; starting on the default login.")
-		return "", true
+		return "", true, false
 	}
 	if account == "" {
 		if toDefault, notice, roomHint := fableSessionOnDefault(sw.Store); toDefault {
 			reportStartSelection(sw, stderr, notice)
 			hinted = roomHint
-			return "", true
+			return "", true, false
 		}
 	}
 	if account == "" && (len(snap.Marked) == 0 || !snap.Settings.Enabled) {
-		return "", false
+		return "", false, false
+	}
+	if ownLink && account == "" {
+		now := sw.Clk.Now()
+		if snap.CurrentMarked && autoswitch.StartLoginHasRoom(snap, snap.Current, now) {
+			return "", false, false
+		}
+		if defaultIsStartLoginWithRoom(sw.Store, now) {
+			why := "Account-" + snap.Current + " is no start login"
+			if snap.CurrentMarked {
+				why = "start login Account-" + snap.Current + " is at its limit"
+			}
+			reportStartSelection(sw, stderr, "Fable store: "+why+"; starting on the default login.")
+			return "", true, true
+		}
 	}
 	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithStatePath(a.fable.StatePath()), autoswitch.WithStartHoldToken(token))
@@ -617,7 +656,29 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 	if outcome.Switched {
 		sw.Log.Action("Switched the Fable store to account "+outcome.To, "start")
 	}
-	return outcome.Hold, false
+	return outcome.Hold, false, false
+}
+
+// defaultIsStartLoginWithRoom reports whether the default login's current
+// account, verified by its credential and enabled, is a start login below its
+// limits by start's ranking: a session can come up there as it is (DESIGN
+// A122). It reads files only.
+func defaultIsStartLoginWithRoom(s *store.Store, now time.Time) bool {
+	p := placementFor(s, false)
+	login := p.login("", p.view)
+	if login.err != nil {
+		return false
+	}
+	num, _, _, err := login.owner.of("default")
+	if err != nil || !store.StartLoginFrom(login.data, num) {
+		return false
+	}
+	set, err := loadStartSettings(p.view.BackupDir())
+	if err != nil {
+		return false
+	}
+	snap := autoswitch.StartSnapshot{Settings: set, Entries: map[string]usage.UsageEntry{num: login.entry}}
+	return autoswitch.StartLoginHasRoom(snap, num, now)
 }
 
 // noFableStartLogin is why start sends a Fable session to the default login
@@ -884,8 +945,9 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "With the Fable store on and usable, they also name the accounts that need a Fable sign-in (tycswap fable --login).")
 	fmt.Fprintln(out, "Sessions on Mythos start on an account marked with tycswap mythos --allow ID, while one is marked.")
 	fmt.Fprintln(out, "For native Claude on Linux and WSL, CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link.")
-	fmt.Fprintln(out, "With start logins marked, a Mythos start or resume begins on a start login's Mythos login.")
-	fmt.Fprintln(out, "--started binds that link and moves a Mythos session on. The status line moves it when Claude")
+	fmt.Fprintln(out, "With start logins marked, a Mythos start or resume begins on a start login's Mythos login, and a")
+	fmt.Fprintln(out, "Fable start whose store is on no start login with room comes up on the default login when that is on one.")
+	fmt.Fprintln(out, "--started binds that link and moves the session on. The status line moves it when Claude")
 	fmt.Fprintln(out, "changes model. To prepare for Mythos, run ! tycswap use mythos in the session, then /model claude-mythos-5-2.")
 	fmt.Fprintln(out, "In-process subagents share this login. If Remote Control disconnects after a move, reconnect with /remote-control.")
 	fmt.Fprintln(out, "macOS, Windows and existing unlinked sessions keep their original login. --check reports a mismatch.")

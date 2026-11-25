@@ -1692,6 +1692,7 @@ For direct launches, the child environment in this table names the chosen store.
 | Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | Fable store only | the selection's own, starting `Fable store: ` |
 | Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
 | Fable | on and usable, no account it can hold with room for Fable, the default login's account with room, no `--account` | that variable removed if it named the store | runs | `tycswap start: Fable store: no Fable login has room (first back: Account-<n> at <time>); starting on the default login.`, then the accounts with Fable room but no Fable login (see below) |
+| Fable | on and usable, a session with a link of its own (Linux, WSL), no `--account`, the store's account no start login or one at its limit, the default login's account a start login with room | that variable removed if it named the store | none on either login: nothing is switched or held | `tycswap start: Fable store: Account-<n> is no start login; starting on the default login.` or `… start login Account-<n> is at its limit; …` |
 | Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | keeps the current Fable login | none |
 | Fable | on and usable, as in the four rows above, with accounts that need a Fable sign-in | as in that row | as in that row | after that row's notice, unless it ended in the accounts with Fable room but no Fable login: `tycswap start: Accounts 1 and 4 need a Fable sign-in: tycswap fable --login` (see below) |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
@@ -1707,6 +1708,16 @@ start`), stamped in `fable/autoswitch_state.json`. A selection there that
 fails otherwise says so and the session starts on the Fable store where it
 sits. `--account ID` selects the requested account on the store serving the
 child. A fallback selects the default login and prints the notice above.
+
+A session with a link of its own (native Claude on Linux and WSL), without
+`--account`, takes a login that already sits on a start login below its
+limits, since other Fable sessions run on the store: the store itself, else
+the default login, counted on its 5-hour and weekly windows. On the default
+login the session only comes up: `start` runs no selection there, switches
+and holds nothing and asks no allocation question, and the SessionStart hook
+places the session by the Fable placement rule, on the Fable store when
+that has room. With neither login on a start login with room the selection
+above runs. A start without a link is as above (DESIGN A122).
 
 Before that selection, a Fable session without `--account`, fresh or a resume
 whose saved link names the Fable store, follows the Fable placement rule
@@ -1799,9 +1810,11 @@ settings as a SessionStart hook:
 Without `TYCSWAP_START_HOLD`, `TYCSWAP_START_FAMILY` and a session link it
 exits at once and opens nothing; with the family only, it records it and does
 nothing else ([tycswap mythos](#tycswap-mythos)). In a linked session it binds
-the link to the session and, when the hook names the model, places a resume or
-a session on a Mythos login as its status line would: a Mythos session leaves
-its start login here, in print mode too (DESIGN A120). It reads the
+the link to the session and places it as its status line would, by the model
+the hook names, else by `TYCSWAP_START_FAMILY` (Claude Code names no model
+in print mode): a Mythos session leaves its start login here and a Fable
+session on the default login goes to the Fable store, in print mode too
+(DESIGN A120, A122). It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under each state file's lock, the
@@ -1936,8 +1949,8 @@ quota and ownership checks still apply.
 Managed native starts on Linux and WSL receive
 `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/links/<token>`.
 `start --started` binds the link to the session UUID, process and selected
-store, and places a resume or a session on a Mythos login as the status line
-would (DESIGN A120). A resume gets a fresh link. The scheduled tick removes links for
+store, and places the session as the status line would (DESIGN A120, A122).
+A resume gets a fresh link. The scheduled tick removes links for
 ended processes and moves eligible Mythos sessions when another ready
 Mythos login has room. After a real Fable store tick it also gives each
 linked Fable session without a held `use` choice the placement the status
