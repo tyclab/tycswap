@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/slotkey"
 )
@@ -276,7 +275,7 @@ func (s *Store) GetCurrentAccount() (email, orgUUID string, ok bool) {
 	if s.fable {
 		return "", "", false
 	}
-	return ccfile.ReadOAuthIdentityFrom(s.GlobalConfigPath())
+	return s.configIdentity(s.GlobalConfigPath())
 }
 
 // HasLiveLogin reports whether ~/.claude.json carries any live identity, or
@@ -499,8 +498,8 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 // take: unowned, or held by an idle former profile whose release was not
 // already refused for the credential it holds now (RECLAIM-4).
 func (s *Store) RotationOwnershipBlockReason(num string) string {
-	if err := s.EnsureAccountAvailable(num); err != nil {
-		if candidate, releaseErr := s.LegacyReleaseCandidate(num); releaseErr == nil && candidate != nil {
+	if err := s.ensureAccountAvailable(num); err != nil {
+		if candidate, releaseErr := s.legacyReleaseCandidate(num); releaseErr == nil && candidate != nil {
 			return s.heldReason(num, candidate.Credentials)
 		}
 		return err.Error()
@@ -509,6 +508,7 @@ func (s *Store) RotationOwnershipBlockReason(num string) string {
 }
 
 func (s *Store) RotationBlockReasons() map[string]string {
+	s = s.OneRead()
 	data, _ := s.ReadSequence()
 	out := map[string]string{}
 	if data == nil {
@@ -529,6 +529,7 @@ func (s *Store) RotationBlockReasons() map[string]string {
 // SwitchableAccountNumbers returns the rotation-eligible slots in sequence order
 // (spec 01§8.4 switchable_account_numbers).
 func (s *Store) SwitchableAccountNumbers() []string {
+	s = s.OneRead()
 	data, _ := s.ReadSequence()
 	if data == nil {
 		return nil

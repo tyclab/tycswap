@@ -69,7 +69,7 @@ func engineSwitcher(sw *core.Switcher, dryRun bool) *core.Switcher {
 }
 
 var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client) *autoswitch.Engine {
-	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, s, onEvent, dryRun,
+	return autoswitch.NewEngine(newTickAdapter(engineSwitcher(sw, dryRun)), s, onEvent, dryRun,
 		autoswitch.WithOAuthClient(oc),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),

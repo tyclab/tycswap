@@ -67,6 +67,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: "auto-switch is off; this dry run shows what it would do"})
 	}
 	s := e.currentSettings()
+	endReads := e.beginReads()
+	defer endReads()
 
 	state := e.readState()
 	if !e.dryRun {
@@ -280,6 +282,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		return blocked, nil
 	}
 
+	// A target is prepared and switched to on fresh reads (DESIGN A116).
+	endReads()
 	axisName := axisLabel(axis, trigger)
 	transientFailure := false
 	ownershipFailure := false
@@ -319,6 +323,22 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
 	}
 	return tickResult{Outcome: Blocked}, nil
+}
+
+// beginReads makes what the switcher reads until the returned end, called
+// once or more, one read operation when it can (DESIGN A116).
+func (e *Engine) beginReads() (end func()) {
+	r, ok := e.sw.(interface{ BeginReads() (end func()) })
+	if !ok {
+		return func() {}
+	}
+	stop, done := r.BeginReads(), false
+	return func() {
+		if !done {
+			done = true
+			stop()
+		}
+	}
 }
 
 // countUnknownTick steps the memory for a tick with no readable usage and

@@ -33,6 +33,7 @@ func Status(s *store.Store, jsonOut bool) (any, error) {
 	if err := backfillLockError(s); err != nil {
 		return nil, err
 	}
+	s = s.OneRead()
 	if jsonOut {
 		payload := buildStatusPayload(s)
 		if fable, _, ok := fableStatus(s); ok {

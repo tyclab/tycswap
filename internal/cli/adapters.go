@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -54,6 +55,58 @@ func (a autoswitchAdapter) RecordedSwitch() (string, float64) {
 }
 
 var _ autoswitch.Switcher = autoswitchAdapter{}
+
+// tickAdapter is an engine's autoswitchAdapter whose ticks each read the
+// ownership inputs once (DESIGN A116): between BeginReads and its end the
+// reads that ask about ownership go to one OneRead copy of the store. Every
+// other method, and every write, is the plain store's.
+type tickAdapter struct {
+	autoswitchAdapter
+	view *atomic.Pointer[core.Switcher]
+}
+
+var _ autoswitch.Switcher = tickAdapter{}
+
+func newTickAdapter(sw *core.Switcher) tickAdapter {
+	return tickAdapter{autoswitchAdapter{sw}, &atomic.Pointer[core.Switcher]{}}
+}
+
+func (a tickAdapter) BeginReads() (end func()) { return beginReads(a.view, a.Switcher) }
+
+func (a tickAdapter) reads() *core.Switcher { return readsOf(a.view, a.Switcher) }
+
+// beginReads puts one OneRead copy of sw's store in view until end; an
+// adapter without a view has no read scope.
+func beginReads(view *atomic.Pointer[core.Switcher], sw *core.Switcher) (end func()) {
+	if view == nil {
+		return func() {}
+	}
+	view.Store(&core.Switcher{Store: sw.Store.OneRead()})
+	return func() { view.Store(nil) }
+}
+
+// readsOf is the switcher the scoped reads go to: view's copy while a scope
+// is open, else sw.
+func readsOf(view *atomic.Pointer[core.Switcher], sw *core.Switcher) *core.Switcher {
+	if view != nil {
+		if v := view.Load(); v != nil {
+			return v
+		}
+	}
+	return sw
+}
+
+func (a tickAdapter) CurrentAccountNumber() *string      { return a.reads().CurrentAccountNumber() }
+func (a tickAdapter) HasLiveLogin() bool                 { return a.reads().HasLiveLogin() }
+func (a tickAdapter) SwitchableAccountNumbers() []string { return a.reads().SwitchableAccountNumbers() }
+func (a tickAdapter) RotationBlockReasons() map[string]string {
+	return a.reads().RotationBlockReasons()
+}
+func (a tickAdapter) PrepareRotationCandidates() { a.reads().PrepareRotationCandidates() }
+
+func (a tickAdapter) UsageEntriesByAccount(fetch map[string]bool) map[string]usage.UsageEntry {
+	return a.reads().UsageEntriesByAccount(fetch)
+}
 
 // transferAdapter provides the transfer.Accounts surface over *core.Switcher.
 // Methods core already promotes with the exact frozen shape (ResolveAccount's

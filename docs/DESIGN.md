@@ -9921,3 +9921,100 @@ login, so the start tests that pin stderr whole now expect the sentence:
 `TestFableStartWithoutMarksOrAutoSwitchIsAsBefore`, `TestFableStartAccount`
 and, on Linux, `TestNativeSessionLinkFailureLaunchesWithOriginalStore` (two
 notice lines for the Fable start). The walk's tests pass unedited.
+
+## A116. One read operation reads each ownership input once
+
+**Why.** On the operator's box (2026-11-25, 0.22.0: 8 accounts, four former
+session profiles with a 200 to 300 KiB `.claude.json` each, about 9 live
+sessions) `tycswap app --headless` used a full CPU core around the clock and a
+scheduled `auto --once` 13 to 17 CPU-seconds. `CredentialOwner` read all its
+inputs on every call: every profile's identity file, decoded whole into
+`map[string]any` for two strings, and every profile's live PIDs. A state build
+asks it once per account per caller, so it decoded the same few files several
+hundred times; that was 74 % of its CPU.
+
+**What is read once.** `Store.OneRead` is a copy of the store for one read
+operation with a memo of two inputs: each config file's `oauthAccount`
+identity, by path (`configIdentity`, `profileDirIdentity`: `credentialOwners`,
+`GetCurrentAccount`, `defaultLiveSlot`, `verifyLegacyHandoff`,
+`ReadOwnedCredentials`), and each profile's live Claude PIDs, by directory
+(`livePIDs`: `credentialOwners`, `verifyLegacyHandoff`, `LegacyProfileOf`).
+Asked again, the first answer is given. Every other input (roster, claims,
+journals, group actives, profile, backup and default credentials, stale
+markers) is read on every question as before. The memo dies with the copy:
+nothing reaches another operation or stays in the dashboard or the engine.
+The operations are `reporting.Snapshot`, `Status`, `ListAccounts`,
+`BuildAccountsInfo`, `CollectUsageEntries`, `UsageByAccount`,
+`UsageEntriesByAccount`, `ReplanCachedUsage`, `DefaultSessionPolicyResult`,
+`FablePool`, `FableWindowNames`, `FableSwitchable`, `ReadFableRoom`,
+`FableSignInNeeded`, the dashboard's Auto view, `SwitchableAccountNumbers`,
+`RotationBlockReasons` and the choice `PrepareRotationCandidates` makes; one
+inside another shares its reads. The functions a policy result keeps ask the
+caller's store. A tick is one too, up to its candidate loop: the engine asks
+its switcher's optional `BeginReads` at the start and ends it before it
+prepares, rechecks or switches to a target. Meanwhile the default engine's
+`tickAdapter` sends the reads that ask about ownership (current account, live
+login, switchable accounts, block reasons, usage, which idle profiles to
+release) and the Fable tick's `fableAdapter` its pool and usage to one
+`OneRead` copy; every write and every other method go to the plain store. Inside the scope tycswap
+writes no identity file and no session record (a release, a refresh, a
+harvest, usage and the state file); the switch, which rewrites the default
+config, comes after it. Whatever lands between a tick's first reads and its
+selection is seen by the target's preparation or the switch, not by the
+selection: the tick then reports the refusal (`account-unavailable`, or the
+switch's error) where it reported the account held (`accounts-in-use`).
+
+**Where a write path reads afresh.** `Store.Fresh` is the copy without the
+memo. Every decision that guards a write reads through it whatever store it
+is handed: `EnsureAccountAvailable`, `LegacyReleaseCandidate`,
+`DiscardLegacyLogin`, `RefreshBackupGuarded`, `PersistBackupCredentials`,
+`ClearLegacyForGroup`, the legacy handoff restore,
+`switching.ReleaseIdleLegacy`, the harvest's owner check and a usage fetch's
+choice of credential (`fetchAccountUsage`). `ReleaseLegacyAccount` reads
+identities and live PIDs only through `LegacyReleaseCandidate`. `RotationOwnershipBlockReason`
+asks the memo-reading `ensureAccountAvailable` and `legacyReleaseCandidate`.
+A tick prepares, rechecks and switches to a target after its reads have
+ended. `PrepareRotationCandidates` skips an account only when its reads say
+the release would do nothing (`MayReleaseLegacy`), so an outdated read can
+delay a release to the target's preparation but never runs one.
+
+**The identity read.** `ccfile.ReadOAuthIdentityFrom` decodes the top level
+into raw values and only `oauthAccount` further. It accepts and rejects what
+the whole-file decode did: valid JSON with an object at the top (`null` or
+another value is no identity), keys matched exactly, the last of a duplicated
+key counting, and a file holding a number a float64 cannot hold refused
+(`numbersFit`). A 250 KiB config reads in 0.9 ms with 31 allocations, 4.4 ms
+with 39,500 before.
+
+**Measured.** On the fixture of the tests (7 accounts, three former profiles,
+an Opus group, a Fable store) one snapshot read an identity file up to 71
+times (602 reads of 10 files) and scanned a profile up to 69 times (480 scans
+of 8 directories), `status` and `list` the same, the Auto view 93 and 90, a
+scheduled tick 51 and 49; now each once. `BenchmarkSnapshotOwnership` (8
+accounts, four 250 KiB identity files): about 1.6 s, 536 MB and 11.2 million
+allocations per snapshot before, 35 ms, 8.4 MB and 87,000 after.
+
+**Limits.** The other inputs are still read per question: a snapshot opens
+about 950 small files (3,000 before). `RecordPlan` still decodes the whole
+live config for a record without a plan. `auto --once` is some ten
+operations (the policy, the withdrawal retry, each tick, the Fable store's
+checks, the retirements), so it reads a file up to 10 times (181 before).
+
+**Tests.** `ownertest` builds the shared fixture and counts reads through two
+seams (`ccfile.ObserveIdentityRead`, `store.ObservePIDScan`).
+`TestReadOperationsReadOwnershipInputsOnce`,
+`TestAutoViewReadsOwnershipInputsOnce` and
+`TestOnceTickReadsOwnershipInputsOnce` count;
+`TestTickEndsItsReadsBeforePreparingATarget` pins the scope's end;
+`TestOneReadAnswersAsFreshReads` compares every ownership answer of one read
+with a fresh one;
+`TestWriteGuardsReadAfreshInOneRead`, `TestLegacyHandoffReadsAfreshInOneRead`,
+`TestDiscardLegacyLoginReadsTheDefaultLoginAfresh`,
+`TestReleaseIdleLegacyReadsAfreshInOneRead`,
+`TestHarvestAndFetchReadTheOwnerAfresh` (each fails when its guard's `Fresh`
+is removed), `TestSnapshotsDoNotShareOwnershipReads`,
+`TestTickSeesAnIdentityChangedBeforeItSwitches` and
+`TestTickSeesASessionEndedSinceTheLastTick` pin freshness;
+`TestCredentialOwnersAsRecorded` the owners as recorded before;
+`TestReadOAuthIdentityKeepsItsTolerance` the identity read against the
+whole-file decode.

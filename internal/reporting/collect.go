@@ -44,6 +44,7 @@ var staggerSleep = func(d time.Duration) { time.Sleep(d) }
 // store.Usage.Reserve. Sentinels are re-derived every pass and never persisted;
 // why a wanted active fetch was skipped persists as the row's skipReason.
 func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]bool) map[string]usage.UsageEntry {
+	s = s.OneRead()
 	st := s.Usage
 	identities := make(map[string]usage.Identity, len(infos))
 	infoByNum := make(map[string]AccountInfo, len(infos))
@@ -142,7 +143,7 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 // UsageEntriesByAccount builds the info rows and collects usage in one pass,
 // the convenience *core.Switcher's frozen UsageEntriesByAccount delegates to.
 func UsageEntriesByAccount(s *store.Store, fetch map[string]bool) map[string]usage.UsageEntry {
-	s = passStore(s, fetch)
+	s = passStore(s.OneRead(), fetch)
 	return CollectUsageEntries(s, BuildAccountsInfo(s), fetch)
 }
 
@@ -174,7 +175,8 @@ func harvestLiveCredential(s *store.Store, ls store.LiveSlot, live string) {
 	if backup, _ := s.ReadAccountCredentials(ls.Slot, email); fingerprintsEqual(backup, live) {
 		return
 	}
-	if owner, err := s.CredentialOwner(ls.Slot); err != nil || owner.Uncertain {
+	// Writing the backup is decided on fresh reads (DESIGN A116).
+	if owner, err := s.Fresh().CredentialOwner(ls.Slot); err != nil || owner.Uncertain {
 		return
 	}
 	harvested := false
@@ -201,6 +203,7 @@ func harvestLiveCredential(s *store.Store, ls store.LiveSlot, live string) {
 }
 
 func UsageByAccount(s *store.Store) map[string]any {
+	s = s.OneRead()
 	entries := CollectUsageEntries(s, BuildAccountsInfo(s), nil)
 	out := make(map[string]any, len(entries))
 	for num, e := range entries {
@@ -210,6 +213,7 @@ func UsageByAccount(s *store.Store) map[string]any {
 }
 
 func ReplanCachedUsage(s *store.Store) {
+	s = s.OneRead()
 	infos := BuildAccountsInfo(s)
 	ids := map[string]usage.Identity{}
 	for _, info := range infos {

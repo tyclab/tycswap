@@ -10,10 +10,14 @@ func (sw *Switcher) PrepareRotationTarget(number string) error {
 	return switching.ReleaseIdleLegacy(sw.Store, number)
 }
 
+// PrepareRotationCandidates releases the idle former profiles of the accounts
+// automatic rotation may take. Which ones it tries is one read (DESIGN A116);
+// each release reads afresh.
 func (sw *Switcher) PrepareRotationCandidates() {
-	current := sw.CurrentAccountNumber()
-	for _, number := range sw.SwitchableAccountNumbers() {
-		if current != nil && *current == number {
+	view := sw.Store.OneRead()
+	current := view.CurrentAccountNumber()
+	for _, number := range view.SwitchableAccountNumbers() {
+		if current != nil && *current == number || !view.MayReleaseLegacy(number) {
 			continue
 		}
 		switch err := sw.PrepareRotationTarget(number); {

@@ -29,6 +29,7 @@ func ModelLimitWindows(entry usage.UsageEntry, family string, now time.Time) ([]
 // allocation leaves Fable out: the accounts the Fable tick may switch the
 // Fable store to. s is the default store.
 func FableSwitchable(s *store.Store) []string {
+	s = s.OneRead()
 	data, err := s.SequenceForUpdate()
 	if err != nil {
 		return nil
@@ -57,6 +58,7 @@ type FableRoom struct {
 // only: room is no ModelLimitWindows for Fable, also without a reading. A
 // store it cannot read has room. s is the default store.
 func ReadFableRoom(s *store.Store) FableRoom {
+	s = s.OneRead()
 	data, err := s.SequenceForUpdate()
 	if _, ferr := s.ForFable(); err != nil || ferr != nil || s.IsFable() {
 		return FableRoom{Room: true}
@@ -123,6 +125,7 @@ func NoUsableFableLogin(s *store.Store, quarantine map[string]autoswitch.Quarant
 // NoUsableFableLogin, none unless an account has a Fable login (DESIGN A115).
 // It reads roster, Fable logins and quarantine only. s is the default store.
 func FableSignInNeeded(s *store.Store) []string {
+	s = s.OneRead()
 	data, _ := s.ReadSequence()
 	if data == nil || s.IsFable() || !s.HasFableLogins() {
 		return nil

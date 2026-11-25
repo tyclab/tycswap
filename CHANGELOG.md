@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The dashboard service, the scheduled tick, `status` and `list` read each profile's `.claude.json` and scan its running sessions once per operation instead of once per account and question, and take the account out of a `.claude.json` without decoding the rest of it. With four large session profiles a dashboard state build took about 3.8 CPU-seconds every 5 seconds and a tick 13 to 17.
 - A Fable session no longer starts on, or stays on, a Fable store whose logins are all at their limit while the default login's account has Fable room: `tycswap start`, the status line and the scheduled tick put it on the default login, the start notice says why and names the login that comes back first, and the session returns once a Fable login has room.
 - `tycswap status`, `tycswap list`, that start notice and one `tycswap.log` warning name the accounts that have Fable room but no Fable login, with `tycswap fable --login`, which signs them in.
 - `tycswap fable --login` signs in for Fable every account that runs Fable and has no usable Fable login, one after another: it names each account and waits for Enter, `s` skips and `q` stops, then lists what was signed in, skipped and failed with the reason, and a second run asks only for the rest. The menu's **Sign in for Fable** offers it first when two or more accounts lack a Fable login.

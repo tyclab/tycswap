@@ -72,12 +72,12 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 				return nil, fmt.Errorf("credential claim disagrees with Account-%s's roster identity", number)
 			}
 			if strings.HasPrefix(owner.Scope, "legacy:") {
-				pids, err := profilePIDs(owner.ProfileDir)
+				pids, err := s.livePIDs(owner.ProfileDir)
 				if err != nil {
 					return nil, err
 				}
 				owner.PIDs = pids
-				email, org, ok := ccfile.ReadProfileIdentity(owner.ProfileDir)
+				email, org, ok := s.profileDirIdentity(owner.ProfileDir)
 				_, credsOK, err := s.ReadProfileCredentials(owner.ProfileDir)
 				if err != nil {
 					return nil, err
@@ -108,7 +108,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 		if err != nil {
 			return nil, err
 		}
-		email, org, ok := ccfile.ReadProfileIdentity(dir)
+		email, org, ok := s.profileDirIdentity(dir)
 		if active != nil && (active.Number == number || active.SameIdentity(account)) {
 			owner := groups.Owner{Scope: string(id), ProfileDir: dir, Account: *active, Uncertain: !ok || profileCreds == "" || email != active.Email || org != active.OrgUUID}
 			if _, present := registry.Claims[active.Number]; !present {
@@ -125,8 +125,8 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 	}
 	defaultDir := s.DefaultProfileDir()
 	defaultConfig := s.DefaultConfigPath()
-	email, org, ok := ccfile.ReadOAuthIdentityFrom(defaultConfig)
-	pids, err := profilePIDs(defaultDir)
+	email, org, ok := s.configIdentity(defaultConfig)
+	pids, err := s.livePIDs(defaultDir)
 	if err != nil {
 		return nil, err
 	}
@@ -156,11 +156,11 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 			return nil, err
 		}
 		dir := s.SessionDir(slot, legacy.Email)
-		pids, err := profilePIDs(dir)
+		pids, err := s.livePIDs(dir)
 		if err != nil {
 			return nil, err
 		}
-		email, org, ok := ccfile.ReadProfileIdentity(dir)
+		email, org, ok := s.profileDirIdentity(dir)
 		profileCreds, readable, err := s.ReadProfileCredentials(dir)
 		if err != nil {
 			return nil, err
@@ -187,7 +187,14 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 	return out, nil
 }
 
+// ObservePIDScan is a test seam, nil in production: it is told every profile
+// directory whose live Claude PIDs ownership scans.
+var ObservePIDScan func(dir string)
+
 func profilePIDs(dir string) ([]int, error) {
+	if ObservePIDScan != nil {
+		ObservePIDScan(dir)
+	}
 	seen := map[int]bool{}
 	for registry, suffix := range map[string]string{"sessions": ".json", "ide": ".lock"} {
 		registryDir := filepath.Join(dir, registry)
@@ -235,7 +242,13 @@ func profilePIDs(dir string) ([]int, error) {
 
 func LiveProfilePIDs(dir string) ([]int, error) { return profilePIDs(dir) }
 
+// EnsureAccountAvailable refuses an account another profile holds. It guards
+// a switch or a withdrawal, so it reads afresh on any store (DESIGN A116).
 func (s *Store) EnsureAccountAvailable(number string) error {
+	return s.Fresh().ensureAccountAvailable(number)
+}
+
+func (s *Store) ensureAccountAvailable(number string) error {
 	owner, err := s.CredentialOwner(number)
 	if err != nil {
 		return err
@@ -302,7 +315,7 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 	if !ok {
 		return "", fmt.Errorf("Account-%s's owning profile credential is unreadable", number)
 	}
-	profileEmail, profileOrg, identityOK := ccfile.ReadProfileIdentity(owner.ProfileDir)
+	profileEmail, profileOrg, identityOK := s.profileDirIdentity(owner.ProfileDir)
 	if !identityOK || profileEmail != owner.Account.Email || profileOrg != owner.Account.OrgUUID {
 		return "", fmt.Errorf("owning profile identity changed while reading Account-%s", number)
 	}

@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
@@ -266,12 +267,36 @@ func ReadOAuthIdentity() (email, orgUUID string, ok bool) {
 	return ReadOAuthIdentityFrom(paths.GetGlobalConfigPath())
 }
 
+// ObserveIdentityRead is a test seam, nil in production: it is told the path
+// of every config file whose oauthAccount identity is read.
+var ObserveIdentityRead func(path string)
+
 func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
-	m := readLenient(configPath)
-	if m == nil {
+	if ObserveIdentityRead != nil {
+		ObserveIdentityRead(configPath)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
 		return "", "", false
 	}
-	oauth, _ := m["oauthAccount"].(map[string]any)
+	return oauthIdentity(data)
+}
+
+// oauthIdentity takes oauthAccount's email and organization out of a config
+// without decoding the rest of it (DESIGN A116). It accepts exactly what
+// decoding the whole file into map[string]any did: valid JSON with an object
+// at the top, each number one a float64 holds; keys match exactly and the
+// last of a duplicated key counts.
+func oauthIdentity(data []byte) (email, orgUUID string, ok bool) {
+	var top map[string]json.RawMessage
+	if json.Unmarshal(data, &top) != nil || top == nil || !numbersFit(data) {
+		return "", "", false
+	}
+	var account any
+	if raw, present := top["oauthAccount"]; present && json.Unmarshal(raw, &account) != nil {
+		return "", "", false
+	}
+	oauth, _ := account.(map[string]any)
 	email, _ = oauth["emailAddress"].(string)
 	if email == "" {
 		return "", "", false
@@ -280,16 +305,36 @@ func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
 	return email, orgUUID, true
 }
 
-func readLenient(path string) map[string]any {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
+// numbersFit reports whether every number in valid JSON data is one a
+// float64 holds, the one thing a decode into map[string]any refuses beyond
+// the syntax. Without an exponent, 300 characters cannot reach 1e308.
+func numbersFit(data []byte) bool {
+	inString := false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		switch {
+		case inString:
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				inString = false
+			}
+		case c == '"':
+			inString = true
+		case c == '-' || c >= '0' && c <= '9':
+			end, exponent := i+1, false
+			for ; end < len(data) && strings.IndexByte("0123456789+-.eE", data[end]) >= 0; end++ {
+				exponent = exponent || data[end] == 'e' || data[end] == 'E'
+			}
+			if exponent || end-i > 300 {
+				if _, err := strconv.ParseFloat(string(data[i:end]), 64); err != nil {
+					return false
+				}
+			}
+			i = end - 1
+		}
 	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil
-	}
-	return m
+	return true
 }
 
 // Matches Python json.dumps(indent=2) with HTML escaping off.

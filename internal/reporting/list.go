@@ -55,7 +55,7 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 	if err := backfillLockError(s); err != nil {
 		return nil, err
 	}
-	s = passStore(s, fetch)
+	s = passStore(s.OneRead(), fetch)
 	infos := BuildAccountsInfo(s)
 	entries := CollectUsageEntries(s, infos, fetch)
 

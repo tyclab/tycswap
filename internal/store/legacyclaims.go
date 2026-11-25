@@ -13,6 +13,7 @@ import (
 )
 
 func (s *Store) ClearLegacyForGroup(journal *groups.Journal) error {
+	s = s.Fresh()
 	if journal.SourceOwner == nil {
 		return nil
 	}
@@ -40,6 +41,7 @@ func (s *Store) ClearLegacyForGroup(journal *groups.Journal) error {
 }
 
 func (s *Store) restoreLegacyHandoff(journal *groups.Journal) error {
+	s = s.Fresh()
 	if journal.SourceOwner == nil {
 		return nil
 	}
@@ -69,11 +71,11 @@ func (s *Store) verifyLegacyHandoff(owner *groups.Owner) error {
 	if err := groups.SafePath(filepath.Join(owner.ProfileDir, ccfile.CredentialsFileName)); err != nil {
 		return err
 	}
-	pids, err := profilePIDs(owner.ProfileDir)
+	pids, err := s.livePIDs(owner.ProfileDir)
 	if err != nil || len(pids) > 0 {
 		return fmt.Errorf("the source legacy profile is running; account claims remain held")
 	}
-	email, org, ok := ccfile.ReadProfileIdentity(owner.ProfileDir)
+	email, org, ok := s.profileDirIdentity(owner.ProfileDir)
 	if !ok || email != owner.Account.Email || org != owner.Account.OrgUUID {
 		return fmt.Errorf("the source legacy identity changed; account claims remain held")
 	}

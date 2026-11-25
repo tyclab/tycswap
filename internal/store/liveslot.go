@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
@@ -175,7 +174,7 @@ func (s *Store) defaultLiveSlot(data *SequenceData, creds string) LiveSlot {
 	if s.fable {
 		return s.defaultScope().defaultLiveSlot(data, creds)
 	}
-	email, orgUUID, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
+	email, orgUUID, ok := s.configIdentity(s.DefaultConfigPath())
 	if !ok {
 		return LiveSlot{}
 	}

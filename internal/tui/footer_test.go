@@ -134,7 +134,9 @@ func TestProgramDownsamplesToTheOutputProfile(t *testing.T) {
 		var out bytes.Buffer
 		p := tea.NewProgram(newTestModel(&fakeFacade{}), tea.WithInput(nil), tea.WithOutput(&out),
 			tea.WithColorProfile(tc.profile), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler())
-		go p.Quit()
+		// Sent, not p.Quit(): Quit does nothing before Run has started, and
+		// then Run never ends.
+		go p.Send(tea.Quit())
 		if _, err := p.Run(); err != nil {
 			t.Fatalf("%s: run: %v", tc.profile, err)
 		}

@@ -366,6 +366,9 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // always reserves the Fable pool's accounts with Fable room and the Fable
 // store's live account, the latter last.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
+	// One read operation; the functions the result keeps ask s itself (DESIGN A116).
+	kept := s
+	s = s.OneRead()
 	base.Model = nil
 	r := PolicyResult{Settings: base}
 	fable := s.FableStore()
@@ -471,7 +474,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			withMythos = append(slices.Clone(counted), MythosModel)
 		}
 		if view.mythosServed(data, base, withMythos) {
-			r.Serves = s.MythosCapable
+			r.Serves = kept.MythosCapable
 			counted = withMythos
 			r.CountedWindows = append(r.CountedWindows, meters...)
 			sort.Strings(r.CountedWindows)
@@ -489,7 +492,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	}
 	room := view.fableBelow(base.ModelThreshold)
 	reserved := r.Reserved
-	r.Reserved = func(num string) bool { return reserved != nil && reserved(num) || room[num] && s.FableCapable(num) }
+	r.Reserved = func(num string) bool { return reserved != nil && reserved(num) || room[num] && kept.FableCapable(num) }
 	return r
 }
 
@@ -570,6 +573,7 @@ func fableReserved(s *store.Store, live string, room map[string]bool) func(num s
 // Fable login, and not quarantined in the Fable state file (FableQuarantine).
 // s is the default store.
 func FablePool(s *store.Store) []string {
+	s = s.OneRead()
 	_, err := s.ForFable()
 	data, _ := s.ReadSequence()
 	if err != nil || data == nil {
@@ -590,7 +594,7 @@ func FablePool(s *store.Store) []string {
 // FableWindowNames is every Fable window name an account's cached usage
 // reports, sorted: what the Fable store's tick counts (DESIGN A102).
 func FableWindowNames(s *store.Store, now time.Time) []string {
-	return scopedNamesFor(newPolicyView(s, now).usage, map[string]bool{"fable": true})
+	return scopedNamesFor(newPolicyView(s.OneRead(), now).usage, map[string]bool{"fable": true})
 }
 
 // policyView is every account's cached usage, its usage the engine would

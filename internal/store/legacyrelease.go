@@ -35,8 +35,14 @@ func releaseDigest(value string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(oauth.AccountOnly(value))))
 }
 
-// LegacyReleaseCandidate is read under the store lock, before any network verification.
+// LegacyReleaseCandidate is read under the store lock, before any network
+// verification. It decides a release, so it reads afresh on any store (DESIGN A116).
 func (s *Store) LegacyReleaseCandidate(number string) (*LegacyRelease, error) {
+	return s.Fresh().legacyReleaseCandidate(number)
+}
+
+// legacyReleaseCandidate is LegacyReleaseCandidate on s's own reads.
+func (s *Store) legacyReleaseCandidate(number string) (*LegacyRelease, error) {
 	owner, err := s.CredentialOwner(number)
 	if err != nil || !strings.HasPrefix(owner.Scope, "legacy:") {
 		return nil, err
@@ -120,6 +126,7 @@ func (s *Store) verifiedLegacyReleaseMarker(owner groups.Owner) error {
 
 // ReleaseLegacyAccount needs the store and source credential/config/storage locks.
 // The marker proves the saved backup if cleanup stops after removing the source.
+// Its one read of identities and live PIDs is LegacyReleaseCandidate's, afresh.
 func (s *Store) ReleaseLegacyAccount(expected *LegacyRelease, verify func(string) error) error {
 	current, err := s.LegacyReleaseCandidate(expected.Owner.Account.Number)
 	if err != nil {
