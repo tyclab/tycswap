@@ -290,6 +290,18 @@ func TestCheckForUpdatesInstallsOnYes(t *testing.T) {
 	}
 }
 
+// A check that could check nothing says so, and calls nothing up to date.
+func TestCheckForUpdatesSaysItCouldNotCheck(t *testing.T) {
+	sh, ft, rig := updatesShell(t, true)
+	rig.latest = ""
+	rig.claude = brewSeat("2.1.281", "")
+	rig.claude.Err = errors.New("HTTP 502")
+	sh.click("update")
+	if len(ft.notes) != 1 || !strings.Contains(ft.notes[0], "Could not check") || strings.Contains(ft.notes[0], "up to date") {
+		t.Errorf("notes = %v, want one that says it could not check and calls nothing up to date", ft.notes)
+	}
+}
+
 // The dashboard's view: the same answer as the badge, and each source's
 // details.
 func TestUpdatesFacadeView(t *testing.T) {
