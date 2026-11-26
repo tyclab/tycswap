@@ -1814,7 +1814,8 @@ the link to the session and places it as its status line would, by the model
 the hook names, else by `TYCSWAP_START_FAMILY` (Claude Code names no model
 in print mode): a Mythos session leaves its start login here and a Fable
 session on the default login goes to the Fable store, in print mode too
-(DESIGN A120, A122). It reads the
+(DESIGN A120, A122). While Claude Code refreshes that login's token the move
+waits, at most 9 s (A123). It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under each state file's lock, the

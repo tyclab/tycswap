@@ -10809,3 +10809,34 @@ session to the store), `TestLinkedFableStartOnAStartLoginsStore`,
 `TestLinkedFableStartWithoutAStartLoginToComeUpOnIsAsBefore`, and in
 `TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook` the hook without
 a model.
+
+## A123. The SessionStart hook's move waits for the client's token refresh
+
+**Why.** Claude Code refreshes an expired token as it comes up and holds its
+login's `.oauth_refresh.lock` meanwhile. A session link is not moved off a
+login whose refresh lock is held (A109), and the hook's placement tried once:
+on the first start after a login's token had expired the move was deferred
+(`move deferred by hook: source login is refreshing`), and the session sent
+its first request from the login it came up on, a start login at its limit
+(A120) or the default login (A122). An interactive session was moved by its
+first status-line report 4 s later, after a first message had failed with
+the login's limit; a print-mode session has no status line.
+
+**The rule.** The hook's placement (`checkLinkedSession` with `wait`) retries
+while the client owns the source login's refresh lock, through
+`cclock.RetryOAuthRefresh`, as `tycswap use` does: every attempt takes and
+releases all locks, and the retries end after `cclock.DefaultTimeoutS` (9 s).
+The session's first request follows the hook (A105), so it is sent from the
+login the hook moved the session to. The status line, `start --check` and
+the tick still try once and defer: they must not wait.
+
+**Limits.** A refresh lock held longer than 9 s leaves the session where it
+came up, with the deferral in `tycswap.log`; its status line or the tick
+moves it. The hook's own time grows by the client's refresh, about a second.
+
+**Tests** (`cli`, Linux): `TestMythosSessionStartHookWaitsForTheClientsRefresh`
+(the lock held for 0.4 s: the hook returns after it and the session has
+moved; before, it returned at once and the session stayed);
+`TestStatusLineDefersDuringClientRefresh` and
+`TestTickDefersDuringClientRefresh` still pass within a second.
+

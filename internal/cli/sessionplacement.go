@@ -44,7 +44,7 @@ func useCommand(prog string, args []string, streams ioStreams) int {
 	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	var result sessionMoveResult
 	if err == nil {
-		result, err = placeSession(sw, id, path, "", args[0], false, "use")
+		result, err = placeSession(sw, id, path, "", args[0], false, true, "use")
 	}
 	if err != nil {
 		errorTo(streams.err, err.Error())
@@ -76,15 +76,19 @@ type sessionQuestion struct {
 	id, path, model, placementModel, claim, text, actor string
 }
 
-func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, actor string) (sessionMoveResult, error) {
-	result, err := evaluateSessionPlacement(sw, id, path, reportedModel, requested, observe, "", actor)
+// placeSession places a linked session. wait: a move retries while the client
+// refreshes the source login's token, as an explicit use does and the
+// SessionStart hook, which the session's first request follows (DESIGN A123);
+// otherwise it is tried once and deferred.
+func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, observe, wait bool, actor string) (sessionMoveResult, error) {
+	result, err := evaluateSessionPlacement(sw, id, path, reportedModel, requested, observe, wait, "", actor)
 	if err == nil && result.question != nil {
 		err = startSessionAsker(*result.question)
 	}
 	return result, err
 }
 
-func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, expected, actor string) (sessionMoveResult, error) {
+func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, requested string, observe, wait bool, expected, actor string) (sessionMoveResult, error) {
 	var result sessionMoveResult
 	family := reporting.ClaudeFamily(reportedModel)
 	if requested == "" && (strings.TrimSpace(reportedModel) == "" || !sessionUUID.MatchString(id)) {
@@ -101,8 +105,8 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		}
 		repair = append(repair, source)
 	}
-	err := reporting.MoveSessionLink(sw.Store, actor, id, path, requested != "", func(locked *store.Store, rec *reporting.SessionLink) error {
-		// Explicit use can retry after a client refresh. Each attempt produces its own result.
+	err := reporting.MoveSessionLink(sw.Store, actor, id, path, wait, func(locked *store.Store, rec *reporting.SessionLink) error {
+		// A waiting move can retry after a client refresh. Each attempt produces its own result.
 		result = sessionMoveResult{}
 		place := placementFor(locked, false)
 		view := place.view
@@ -219,7 +223,7 @@ func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, a
 	if err != nil || answer != "/approved" {
 		return err
 	}
-	_, err = evaluateSessionPlacement(sw, q.id, q.path, q.model, "", false, q.claim+answer, q.actor)
+	_, err = evaluateSessionPlacement(sw, q.id, q.path, q.model, "", false, false, q.claim+answer, q.actor)
 	return err
 }
 
@@ -350,12 +354,12 @@ func verifiedLoginOwner(view *store.Store, data *store.SequenceData) loginOwner 
 	return loginOwner{num: num, email: email, org: org}
 }
 
-func checkLinkedSession(id, model, actor string) string {
+func checkLinkedSession(id, model, actor string, wait bool) string {
 	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		return err.Error()
 	}
-	result, err := placeSession(sw, id, sessionLinkPath, model, "", false, actor)
+	result, err := placeSession(sw, id, sessionLinkPath, model, "", false, wait, actor)
 	if err != nil {
 		return err.Error()
 	}

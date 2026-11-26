@@ -55,8 +55,9 @@ func startStarted(in io.Reader) {
 			} else if model := cmp.Or(observedModel, family); model != "" {
 				// The session moves on from here, also one that draws no status
 				// line: its client has read its login's settings. Claude Code may
-				// name no model; the family is then the one start read (DESIGN A120, A122).
-				defer checkLinkedSession(session, model, "hook")
+				// name no model; the family is then the one start read. The move
+				// waits for the client's token refresh (DESIGN A120, A122, A123).
+				defer checkLinkedSession(session, model, "hook", true)
 			}
 		}
 	} else if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
