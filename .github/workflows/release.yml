@@ -7,7 +7,8 @@
 # macOS attached when a Mac has built it. A tag pushed by hand builds a
 # draft, as before; a dispatch with a tag finishes and publishes that tag's
 # release. Every decision is internal/release's (releasectl); the Retry
-# workflow reruns a job that found no runner.
+# workflow reruns a job that found no runner. A published release starts
+# flakelab's pin workflow with the tyclab-release GitHub App's token (A124).
 name: Release
 
 on:
@@ -236,3 +237,31 @@ jobs:
           TAG: ${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
           COMMIT: ${{ needs.decide.outputs.commit }}
         run: go run ./internal/release/releasectl publish --tag "$TAG" --commit "$COMMIT" --dist dist --publish=false
+
+  # Starts flakelab's tycswap pin once a release is published (A124).
+  # GITHUB_TOKEN reaches this repository only and flakelab's schedule never
+  # fires, so the tyclab-release GitHub App, installed on tycswap and
+  # flakelab, gives a token for flakelab's actions alone. While the App's
+  # variable is not set the job is skipped; with it set, a missing secret or
+  # installation fails the job red, and the release itself stands. The pin
+  # workflow finds the newest release itself and does nothing when it is
+  # pinned already, so a rerun is harmless.
+  pin:
+    needs: [decide, publish]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' &&
+      needs.decide.outputs.publish == 'true' && vars.RELEASE_APP_CLIENT_ID != '' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: flakelab
+          permission-actions: write
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: gh workflow run tycswap-pin.yml --repo "$GITHUB_REPOSITORY_OWNER/flakelab"

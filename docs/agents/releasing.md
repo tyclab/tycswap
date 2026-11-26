@@ -36,6 +36,14 @@ release.
   The macOS binaries are attached when a Mac has built them, and
   `SHA256SUMS` grows by their lines. A `macos` job that is running is waited
   for; its completion decides.
+- Once the release is published, the Release workflow's `pin` job starts
+  flakelab's `tycswap-pin.yml`, which opens the pin pull request that merges
+  itself (DESIGN A124). It uses a token of the `tyclab-release` GitHub App
+  (Actions variable `RELEASE_APP_CLIENT_ID`, secret
+  `RELEASE_APP_PRIVATE_KEY`). While the variable is not set the job is
+  skipped, and with it set a missing secret or installation fails it red;
+  the release stands either way: start the pin with
+  `gh workflow run tycswap-pin.yml --repo tyclab/flakelab`.
 - When merges are released out of order, the later merge's release carries
   the earlier one's entries, and the earlier merge's run does nothing.
 - A job that found no runner (cancelled before its first step) is rerun by

@@ -10840,3 +10840,31 @@ moved; before, it returned at once and the session stayed);
 `TestStatusLineDefersDuringClientRefresh` and
 `TestTickDefersDuringClientRefresh` still pass within a second.
 
+## A124. A published release starts flakelab's pin
+
+**Why.** A release is pinned in flakelab by its `tycswap-pin.yml`, which
+opens a pin pull request that approves its own CI run and merges itself. That
+workflow's quarter-hour schedule has never fired (no scheduled run since it
+merged on 2026-11-25, also after its minutes were moved), so every pin so far
+was started by hand. The operator wants the release and its pin to need no
+person.
+
+**How.** The Release workflow's last job, `pin`, runs after `publish` when
+the release was published (`decide` says `publish=true`: a merge, or a
+dispatch with notes; a hand-pushed tag's draft starts nothing) and runs
+`gh workflow run tycswap-pin.yml --repo tyclab/flakelab`. The workflow's own
+`GITHUB_TOKEN` can reach only this repository, and GitHub has no project
+token; GitHub's documentation names a GitHub App for access across
+repositories. The `tyclab-release` App, installed on tycswap and flakelab,
+gives the job a token limited to flakelab and `actions: write`
+(`actions/create-github-app-token`, from the Actions variable
+`RELEASE_APP_CLIENT_ID` and secret `RELEASE_APP_PRIVATE_KEY`). The pin
+workflow reads the newest release itself and does nothing for one that is
+pinned already, so a rerun of the job is harmless.
+
+**Failure.** While the variable `RELEASE_APP_CLIENT_ID` is not set the job
+is skipped: the App is not set up, and a red run on every release would say
+nothing new. With it set, a missing secret or an App that is not installed
+on flakelab fails the job red after the release is published. Either way the
+release stands and the pin is started by hand as before. The job runs no
+code of this repository.
