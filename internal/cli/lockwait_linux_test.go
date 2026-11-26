@@ -125,7 +125,7 @@ func TestFableMovesDecideWithoutANestedLock(t *testing.T) {
 			placeFableSessions(sw)
 		}},
 		{name: "the status line", model: "claude-fable-5-2", run: func(t *testing.T, sw *core.Switcher, s linked, model string) {
-			if _, err := evaluateSessionPlacement(sw, s.id, s.link, model, "", true, "", "status line"); err != nil {
+			if _, err := evaluateSessionPlacement(sw, s.id, s.link, model, "", true, false, "", "status line"); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -189,7 +189,7 @@ func TestFableMovesDecideWithoutANestedLock(t *testing.T) {
 // pendingQuestion is the allocation question the status line puts for s.
 func pendingQuestion(t *testing.T, sw *core.Switcher, s linked, model string) sessionQuestion {
 	t.Helper()
-	result, err := evaluateSessionPlacement(sw, s.id, s.link, model, "", false, "", "status line")
+	result, err := evaluateSessionPlacement(sw, s.id, s.link, model, "", false, false, "", "status line")
 	if err != nil || result.question == nil {
 		t.Fatalf("fixture: the status line put no allocation question: %+v %v", result, err)
 	}

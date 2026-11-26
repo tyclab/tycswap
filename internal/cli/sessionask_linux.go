@@ -76,7 +76,7 @@ func sessionAskerCommand(args []string) int {
 	if len(args) == 4 && args[3] == "hook" {
 		actor = "hook"
 	}
-	result, err := evaluateSessionPlacement(sw, rec.ID, link, args[1], "", false, args[2], actor)
+	result, err := evaluateSessionPlacement(sw, rec.ID, link, args[1], "", false, false, args[2], actor)
 	if err != nil || result.question == nil {
 		return 1
 	}

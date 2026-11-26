@@ -165,6 +165,33 @@ func TestMythosSessionLeavesItsStartLoginAtItsSessionStartHook(t *testing.T) {
 	})
 }
 
+// The client refreshes its login's token as it comes up and holds that login's
+// refresh lock meanwhile: the hook waits for it and then moves the session,
+// since the session's first request follows the hook.
+func TestMythosSessionStartHookWaitsForTheClientsRefresh(t *testing.T) {
+	_, rec, spent, room := mythosStartLoginFixture(t, false)
+	link := startOnStartLogin(t, rec, spent)
+	lock := filepath.Join(spent, ".oauth_refresh.lock")
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	const held = 400 * time.Millisecond
+	released := make(chan error, 1)
+	go func() {
+		time.Sleep(held)
+		released <- os.Remove(lock)
+	}()
+	start := time.Now()
+	sessionStartHook(t, rec, link, "startup", startLoginSession, "")
+	took := time.Since(start)
+	if err := <-released; err != nil {
+		t.Fatal(err)
+	}
+	if target, _ := os.Readlink(link); target != room || took < held {
+		t.Fatalf("after a hook of %s the link points to %s, want %s once the refresh had ended", took, target, room)
+	}
+}
+
 // A print-mode session draws no status line: the hook alone moves it, else
 // the tick once a login has room. No status line runs here.
 func TestMythosPrintModeSessionLeavesItsStartLogin(t *testing.T) {

@@ -29,7 +29,7 @@ func startCheck(in io.Reader, out io.Writer) {
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
 	session, model := observedSessionModel(raw)
 	if sessionLinkPath != "" {
-		if line := checkLinkedSession(session, model, "status line"); line != "" {
+		if line := checkLinkedSession(session, model, "status line", false); line != "" {
 			fmt.Fprintln(out, termsafe.Strip(line))
 		}
 		return
