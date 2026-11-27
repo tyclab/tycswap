@@ -70,6 +70,8 @@ type sessionMoveResult struct {
 	line     string
 	news     bool
 	question *sessionQuestion
+	// spent: the session moved onto a login at its limit (DESIGN A125).
+	spent bool
 }
 
 type sessionQuestion struct {
@@ -139,6 +141,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		if explicit || wanted != mythosFamily {
 			rec.ResumeMythos = ""
 		}
+		place.leaving = actor == "hook" && wanted != mythosFamily && isMythosDirectory(view.BackupDir(), rec.Target)
 		target, identity, err := sessionDestination(place, rec, wanted, model, explicit)
 		if err != nil {
 			if explicit || expected != "" {
@@ -178,6 +181,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 			return errors.New("the placement changed while awaiting the answer")
 		}
 		rec.Target, rec.Question, rec.ResumeMythos = target.dir, "", ""
+		result.spent = target.spent && oldTarget != rec.Target
 		if explicit {
 			rec.Wanted = requested
 		}
@@ -307,7 +311,10 @@ func sessionDestination(p *placementInputs, rec *reporting.SessionLink, wanted, 
 		return target, "", err
 	}
 	if limits, _ := modelLimitWindows(login.entry, model, view.Clk.Now()); len(limits) > 0 {
-		return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
+		if !p.leaving {
+			return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
+		}
+		target.spent = true
 	}
 	target.number, target.name = num, store.AccountNameFrom(login.data, num)
 	if models, set := store.ModelsFrom(login.data, num); set && (model == "opus" || model == "fable") && !slices.Contains(models, model) {

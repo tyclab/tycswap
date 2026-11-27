@@ -234,6 +234,8 @@ func TestMythosStartLoginPreviousSession(t *testing.T) {
 	family, scope := mythosFamily, "mythos/"+filepath.Base(dir)
 	if dir == fableStoreDir() {
 		family, scope = "fable", "fable"
+	} else if !isMythosDirectory(root, dir) {
+		family, scope = "opus", ""
 	}
 	if err := reporting.BindSessionLink(root, startLoginSession, link, family, scope, time.Now()); err != nil {
 		t.Fatal(err)

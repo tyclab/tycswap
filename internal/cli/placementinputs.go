@@ -22,6 +22,9 @@ import (
 type placementInputs struct {
 	view   *store.Store // without lineage writes, OAuth or log
 	shared bool
+	// leaving: the session's SessionStart hook takes it off a Mythos login it
+	// only came up on; its destination's limit does not keep it there (A125).
+	leaving bool
 
 	fableState readOnce[store.FableState]
 	fableStart readOnce[fableStartAnswer]
