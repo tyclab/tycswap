@@ -46,6 +46,9 @@ type mythosPlacement struct {
 	// notice is start's line for a start on a start login, seed the login it
 	// records as the selection when there is none (DESIGN A120).
 	notice, seed string
+	// spent: a session leaves the login it came up on for this one although
+	// it is at its limit (DESIGN A125).
+	spent bool
 }
 
 var askPlacement = func(streams ioStreams, question, detail string, printMode bool) (bool, error) {

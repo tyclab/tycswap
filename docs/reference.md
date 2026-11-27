@@ -1716,8 +1716,22 @@ the default login, counted on its 5-hour and weekly windows. On the default
 login the session only comes up: `start` runs no selection there, switches
 and holds nothing and asks no allocation question, and the SessionStart hook
 places the session by the Fable placement rule, on the Fable store when
-that has room. With neither login on a start login with room the selection
-above runs. A start without a link is as above (DESIGN A122).
+that has room. With neither login on a start login with room the session
+comes up on a start login's own login (below, DESIGN A125), and without one
+the selection above runs. A start without a link is as above (DESIGN A122).
+
+A start with a link of its own, without `--account`, whose selection on the
+default login or the Fable store would switch or hold that login, comes up on
+a start login's own login instead: the ready Mythos login of an account
+marked as a start login, one below its limits first, else the first in
+sequence order (`tycswap start: Account-<n> is no start login; starting on
+start login Account-<m>'s Mythos login.`, with `start login Account-<n> is at
+its limit`, `Account-<n> is not marked for Mythos` for a Mythos session, or
+the `Fable store: ` prefix as the reason). `start` switches and holds
+nothing there and asks no allocation question; the SessionStart hook places
+the session on the default login, the Fable store or a Mythos login by its
+model. With no such login ready the selection runs as described above
+(DESIGN A125).
 
 Before that selection, a Fable session without `--account`, fresh or a resume
 whose saved link names the Fable store, follows the Fable placement rule
@@ -1815,7 +1829,9 @@ the hook names, else by `TYCSWAP_START_FAMILY` (Claude Code names no model
 in print mode): a Mythos session leaves its start login here and a Fable
 session on the default login goes to the Fable store, in print mode too
 (DESIGN A120, A122). While Claude Code refreshes that login's token the move
-waits, at most 9 s (A123). It reads the
+waits, at most 9 s (A123). A session of another family that came up on a
+Mythos login leaves it here also for a login at its limit, and one tick of
+both stores then follows, as after a start hold (A125). It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under each state file's lock, the
@@ -1950,7 +1966,8 @@ quota and ownership checks still apply.
 Managed native starts on Linux and WSL receive
 `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/links/<token>`.
 `start --started` binds the link to the session UUID, process and selected
-store, and places the session as the status line would (DESIGN A120, A122).
+store, and places the session as the status line would (DESIGN A120, A122,
+A125).
 A resume gets a fresh link. The scheduled tick removes links for
 ended processes and moves eligible Mythos sessions when another ready
 Mythos login has room. After a real Fable store tick it also gives each

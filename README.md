@@ -669,8 +669,15 @@ while a login already sits on a start login with room. That is the store
 itself, or else the default login: the session comes up there (`tycswap
 start: Fable store: Account-9 is no start login; starting on the default
 login.`), nothing is switched or held, and its SessionStart hook moves it to
-the Fable store. With neither on a start login with room, and with
-`--account ID`, the start moves the store as above (DESIGN A122).
+the Fable store (DESIGN A122).
+
+A start that would still switch or hold a shared login, the default login
+or the Fable store, comes up on a start login's own Mythos login instead
+when one is ready (`tycswap start: Account-9 is no start login; starting on
+start login Account-8's Mythos login.`). Nothing shared is switched or held,
+for a session of any model, and the SessionStart hook moves the session to
+the login its model runs on. Without such a login, and with `--account ID`,
+the start selects as above (DESIGN A125).
 
 Selection is best effort. Missing marks and an already-marked current login
 are silent. An unavailable target or store prints a clear error on stderr,

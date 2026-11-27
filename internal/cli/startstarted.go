@@ -11,17 +11,21 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // startStarted records the family startFamilyEnv names for the hook's
 // session, so the policy knows a Mythos session before its first status line
 // (DESIGN A106). In a linked session it binds the link and places the session
-// as its status line would (A109, A120, A122). It then
+// as its status line would (A109, A120, A122); a session that came up on a
+// Mythos login of another family's start leaves it also for a login at its
+// limit, and one tick then moves that login on (A125). It then
 // releases the start hold startHoldEnv names, if it is still there, and, once
 // no other session is starting, runs one tick of both stores as `auto --once`
 // does: also when the hold had ended, since a session that took longer than
@@ -57,7 +61,7 @@ func startStarted(in io.Reader) {
 				// line: its client has read its login's settings. Claude Code may
 				// name no model; the family is then the one start read. The move
 				// waits for the client's token refresh (DESIGN A120, A122, A123).
-				defer checkLinkedSession(session, model, "hook", true)
+				defer placeStartedSession(session, model, token)
 			}
 		}
 	} else if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
@@ -68,6 +72,25 @@ func startStarted(in io.Reader) {
 	if token == "" {
 		return
 	}
+	startedTick(token)
+}
+
+// placeStartedSession is the hook's placement of its linked session. When the
+// session left the login it came up on for one at its limit and no start hold
+// has run the tick, one tick runs now (DESIGN A125).
+func placeStartedSession(session, model, token string) {
+	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+	if err != nil {
+		return
+	}
+	if result, err := placeSession(sw, session, sessionLinkPath, model, "", false, true, "hook"); err == nil && result.spent && token == "" {
+		startedTick("")
+	}
+}
+
+// startedTick releases the start hold token names ("" for none) and, once no
+// other session is starting, runs one tick of both stores.
+func startedTick(token string) {
 	sw, err := constructSwitcher(false, io.Discard)
 	if err != nil {
 		return
@@ -95,6 +118,9 @@ func releaseStartHolds(sw *core.Switcher, token string) []string {
 	statePaths := []string{sw.StatePath()}
 	if f, err := sw.Store.ForFable(); err == nil {
 		statePaths = append(statePaths, f.StatePath())
+	}
+	if token == "" {
+		return statePaths
 	}
 	for _, path := range statePaths {
 		if err := autoswitch.ReleaseStartHold(path, sw.Clk, token); err != nil {

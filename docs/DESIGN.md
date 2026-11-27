@@ -10868,3 +10868,53 @@ nothing new. With it set, a missing secret or an App that is not installed
 on flakelab fails the job red after the release is published. Either way the
 release stands and the pin is started by hand as before. The job runs no
 code of this repository.
+
+## A125. A linked start that would switch or hold a shared login comes up on a start login's own login
+
+**Why.** The default login and the Fable store are each one login for every
+session on them. A start whose shared login sits on no start login switches
+it to one, one at its limit included, and holds it; a start on a start login
+at its limit holds it (A105). Every session on that login runs on that
+account meanwhile and answers with its limit. A122 ended that for a Fable
+start only while the default login sits on a start login with room: with the
+default login on an account that is no start login, or on one at its limit,
+the Fable store was still switched, and a start of any other family switched
+or held the default login as before. A session needs a start login only to
+come up on (A120, A122), and a Mythos login (A109) is one account's own
+login, which no selection switches.
+
+**The rule.** A start with a link of its own, without `--account`, whose
+selection on a shared login would switch or hold that login, comes up on a
+start login's own login instead: the ready Mythos login of an account marked
+as a start login, one below its limits by start's ranking first, else the
+first in sequence order (`ownStartLogin`). `start` then switches nothing,
+holds nothing, writes no state and asks no allocation question, and says
+`<why>; starting on start login Account-N's Mythos login.`
+
+- On the Fable store (`selectFableStartLogin`) this follows A122's two
+  steps: the store on a start login with room, then the default login on
+  one, come first.
+- On the default login (`ownLoginInstead`, before `selectStartLoginFor`) it
+  holds for every family, also for a Fable start the placement rule sends
+  there (A112) and a Mythos start that reaches it: whenever
+  `autoswitch.StartKeepsLogin` says the selection would not leave the login
+  as it is.
+
+With no start login's Mythos login ready, with `--account`, without a link,
+without marks and with auto-switch off, a start is as before.
+
+**The hook.** `start --started` places the session by its model, else its
+family (A122): on the default login, on the Fable store by the placement
+rule (A112), or on a Mythos login (A120). A session of another family leaves
+a Mythos login at its hook also when its destination is at a limit
+(`placementInputs.leaving`): it only came up there, and that account's quota
+may be allocated to Mythos alone. The hook then runs one tick of both
+stores, as after a start hold (A105), so auto-switch moves the shared login
+on. The other deferrals stay: an allocation question, a parked Fable login,
+a refresh lock held beyond A123's wait.
+
+**Limits.** A box needs the ready Mythos login of a start login; without one
+a start selects as before and says nothing. If the hook does not run, or its
+move is deferred, that session's requests go out on the own login's account
+until its status line or the tick moves it; no other session is affected.
+Sessions on Windows and macOS have no link.

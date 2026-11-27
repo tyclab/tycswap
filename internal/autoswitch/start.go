@@ -205,6 +205,13 @@ func StartLoginHasRoom(snap StartSnapshot, num string, now time.Time) bool {
 	return len(ranked) == 1 && ranked[0].tier != startAtLimit
 }
 
+// StartKeepsLogin reports whether a start without an account neither switches
+// nor holds the login snap describes (DESIGN A125).
+func StartKeepsLogin(snap StartSnapshot, now time.Time) bool {
+	_, stop := startNoop(snap, "")
+	return stop && !startHoldWanted(snap, snap.Current, now)
+}
+
 func startNoop(snap StartSnapshot, account string) (StartOutcome, bool) {
 	switch {
 	case account != "" && snap.Current == account && !snap.CurrentDisabled:

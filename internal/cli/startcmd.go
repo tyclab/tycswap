@@ -412,18 +412,27 @@ func startSharedLogin(env, args []string, root, storeDir, account, model, savedT
 	}
 	if onFable {
 		var toDefault, asIs bool
-		hold, toDefault, asIs = startSelectFable(account, streams.err, "", native, ownLink)
+		var own string
+		hold, toDefault, asIs, own = startSelectFable(account, streams.err, "", native, ownLink)
 		if toDefault {
 			childEnv = withoutFableStore(env, storeDir)
 			onFable = false
 		}
+		if own != "" {
+			childEnv = withFableStore(env, own)
+		}
 		if asIs {
 			// The session only comes up there: no selection, no allocation
-			// question; its hook places it (DESIGN A122).
+			// question; its hook places it (DESIGN A122, A125).
 			return childEnv, "", "", 0
 		}
 	}
 	if !onFable {
+		if ownLink && account == "" {
+			if own := ownLoginInstead(model, streams.err); own != "" {
+				return withFableStore(env, own), "", "", 0
+			}
+		}
 		if model == mythosFamily {
 			family = mythosFamily
 			hold = startSelectMythos(account, streams.err)
@@ -588,12 +597,13 @@ func withStartVar(env []string, name, value string) []string {
 // account leaves the Fable store as it is while a login sits on a start login
 // with room: the store itself, else the default login, where asIs says the
 // session only comes up, with no selection there, and its link moves it
-// (A122). Its last notice names the accounts that need a Fable sign-in, unless
-// the rule's notice ended in A112's hint (A115).
-func selectFableStartLogin(account string, stderr io.Writer, token string, native, ownLink bool) (hold string, toDefault, asIs bool) {
+// (A122); else on own, a start login's own login, when one is ready (A125).
+// Its last notice names the accounts that need a Fable sign-in, unless the
+// rule's notice ended in A112's hint (A115).
+func selectFableStartLogin(account string, stderr io.Writer, token string, native, ownLink bool) (hold string, toDefault, asIs bool, own string) {
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
-		return "", false, false
+		return "", false, false, ""
 	}
 	hinted := false
 	defer func() {
@@ -603,7 +613,7 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 	}()
 	a, err := newFableAdapter(sw, sw.Log)
 	if err != nil {
-		return "", false, false
+		return "", false, false, ""
 	}
 	if account != "" {
 		data, readErr := sw.SequenceForUpdate()
@@ -611,41 +621,45 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 			account, _, _, readErr = sw.ResolveAccountFrom(data, account)
 		}
 		if readErr != nil {
-			return "", false, false
+			return "", false, false, ""
 		}
 	}
 	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account, native) }
 	snap, toDefault, err := fableStartsOnDefault(sw, account)
 	if err != nil {
 		reportStartSelection(sw, stderr, "Fable store: Could not select a start login: "+err.Error()+"; continuing with the current login.")
-		return "", false, false
+		return "", false, false, ""
 	}
 	if toDefault {
 		reportStartSelection(sw, stderr, noFableStartLogin+"; starting on the default login.")
-		return "", true, false
+		return "", true, false, ""
 	}
 	if account == "" {
 		if toDefault, notice, roomHint := fableSessionOnDefault(sw.Store); toDefault {
 			reportStartSelection(sw, stderr, notice)
 			hinted = roomHint
-			return "", true, false
+			return "", true, false, ""
 		}
 	}
 	if account == "" && (len(snap.Marked) == 0 || !snap.Settings.Enabled) {
-		return "", false, false
+		return "", false, false, ""
 	}
 	if ownLink && account == "" {
 		now := sw.Clk.Now()
 		if snap.CurrentMarked && autoswitch.StartLoginHasRoom(snap, snap.Current, now) {
-			return "", false, false
+			return "", false, false, ""
+		}
+		why := "Fable store: Account-" + snap.Current + " is no start login"
+		if snap.CurrentMarked {
+			why = "Fable store: start login Account-" + snap.Current + " is at its limit"
 		}
 		if defaultIsStartLoginWithRoom(sw.Store, now) {
-			why := "Account-" + snap.Current + " is no start login"
-			if snap.CurrentMarked {
-				why = "start login Account-" + snap.Current + " is at its limit"
-			}
-			reportStartSelection(sw, stderr, "Fable store: "+why+"; starting on the default login.")
-			return "", true, true
+			reportStartSelection(sw, stderr, why+"; starting on the default login.")
+			return "", true, true, ""
+		}
+		if dir, num := ownStartLogin(sw.Store); dir != "" {
+			reportStartSelection(sw, stderr, why+ownLoginNotice(num))
+			return "", false, true, dir
 		}
 	}
 	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),
@@ -656,7 +670,7 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 	if outcome.Switched {
 		sw.Log.Action("Switched the Fable store to account "+outcome.To, "start")
 	}
-	return outcome.Hold, false, false
+	return outcome.Hold, false, false, ""
 }
 
 // defaultIsStartLoginWithRoom reports whether the default login's current
@@ -947,6 +961,8 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "For native Claude on Linux and WSL, CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link.")
 	fmt.Fprintln(out, "With start logins marked, a Mythos start or resume begins on a start login's Mythos login, and a")
 	fmt.Fprintln(out, "Fable start whose store is on no start login with room comes up on the default login when that is on one.")
+	fmt.Fprintln(out, "A start that would otherwise switch or hold the default login or the Fable store comes up on a start")
+	fmt.Fprintln(out, "login's Mythos login when one is ready: nothing shared moves, whatever the session's model.")
 	fmt.Fprintln(out, "--started binds that link and moves the session on. The status line moves it when Claude")
 	fmt.Fprintln(out, "changes model. To prepare for Mythos, run ! tycswap use mythos in the session, then /model claude-mythos-5-2.")
 	fmt.Fprintln(out, "In-process subagents share this login. If Remote Control disconnects after a move, reconnect with /remote-control.")
