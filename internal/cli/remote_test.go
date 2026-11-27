@@ -1029,6 +1029,24 @@ func TestRemoteClientFollowsNoRedirect(t *testing.T) {
 	}
 }
 
+// Only the engine's own one-time URL reaches the browser opener: anything
+// else a listener on the port answers is refused before ShellExecute would
+// launch whatever its scheme is registered for.
+func TestRemoteLaunchURLIsChecked(t *testing.T) {
+	rogue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"url":"file:///C:/Windows/System32/calc.exe"}`))
+	}))
+	t.Cleanup(rogue.Close)
+	rc := newRemoteClient(rogue.URL, tokenFile(t, testRemoteToken))
+	if err := rc.loadToken(); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := rc.Launch(); err == nil || u != "" {
+		t.Errorf("Launch = %q, %v; want refused", u, err)
+	}
+}
+
 // -- the command -------------------------------------------------------------
 
 // Two remote trays cannot run: the second says so like the local app does.
