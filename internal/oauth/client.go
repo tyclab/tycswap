@@ -3,7 +3,8 @@
 // Implements spec 04§1.8 (try_refresh_oauth_credentials), 04§1.9 (refresh error
 // classification), 04§1.10 (_parse_token_account), 04§1.12 (fetch_oauth_profile),
 // 04§1.15 (request_usage_data). Two hosts: refresh -> platform.claude.com,
-// profile/usage -> api.anthropic.com. Timeouts: refresh 10s, profile/usage 5s.
+// profile/usage -> api.anthropic.com. Timeouts: refresh 5s to send then 30s
+// for the reply (DESIGN A129), profile/usage 5s.
 
 package oauth
 
@@ -14,8 +15,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,10 +35,14 @@ type Identity struct {
 // Credentials holds the full rotated credentials JSON on success (else ""),
 // Error classifies failures (ErrInvalidGrant / ErrNoRefreshToken / ErrTransient;
 // "" on success), and TokenAccount is the opportunistic identity or nil.
+// Unanswered marks a transient failure after the request was written with no
+// verdict read (a parsed success or a 4xx): the server may have spent the
+// grant, so its successor may be lost (DESIGN A129).
 type RefreshOutcome struct {
 	Credentials  string
 	Error        string
 	TokenAccount *Identity
+	Unanswered   bool
 }
 
 // UsageOutcome is the result of a usage-API fetch attempt (04§1.21). Usage is
@@ -65,12 +72,75 @@ type ProfileProber interface {
 }
 
 // HTTPClient is the real Client backed by net/http. The URL fields default to
-// the production endpoints and are overridable for tests.
+// the production endpoints and are overridable for tests. A zero refresh
+// bound takes its default.
 type HTTPClient struct {
-	Client     *http.Client
-	TokenURL   string
-	ProfileURL string
-	UsageURL   string
+	Client              *http.Client
+	TokenURL            string
+	ProfileURL          string
+	UsageURL            string
+	RefreshSendTimeout  time.Duration
+	RefreshReplyTimeout time.Duration
+}
+
+// A refresh runs under the store lock, which a waiting command gives up on
+// after filelock.DefaultTimeout (10 s). Until its request is written it is
+// bounded below that, and a failure spent nothing. Once written, its reply is
+// waited for as long as Claude Code waits: giving up may lose the successor.
+const (
+	DefaultRefreshSendTimeout  = 5 * time.Second
+	DefaultRefreshReplyTimeout = 30 * time.Second
+)
+
+func (c *HTTPClient) refreshBounds() (send, reply time.Duration) {
+	send, reply = c.RefreshSendTimeout, c.RefreshReplyTimeout
+	if send <= 0 {
+		send = DefaultRefreshSendTimeout
+	}
+	if reply <= 0 {
+		reply = DefaultRefreshReplyTimeout
+	}
+	return send, reply
+}
+
+// refreshPhase cancels a refresh at the send bound until the request is
+// written, then at the reply bound, and remembers whether it was written.
+type refreshPhase struct {
+	mu     sync.Mutex
+	timer  *time.Timer
+	cancel context.CancelFunc
+	reply  time.Duration
+	sent   bool
+}
+
+func startRefreshPhase(ctx context.Context, send, reply time.Duration) (context.Context, *refreshPhase) {
+	reqCtx, cancel := context.WithCancel(ctx)
+	p := &refreshPhase{cancel: cancel, reply: reply}
+	p.timer = time.AfterFunc(send, cancel)
+	return httptrace.WithClientTrace(reqCtx, &httptrace.ClientTrace{WroteRequest: p.wrote}), p
+}
+
+func (p *refreshPhase) wrote(info httptrace.WroteRequestInfo) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if info.Err != nil || p.sent || !p.timer.Stop() {
+		return
+	}
+	p.sent = true
+	p.timer = time.AfterFunc(p.reply, p.cancel)
+}
+
+func (p *refreshPhase) written() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.sent
+}
+
+func (p *refreshPhase) stop() {
+	p.mu.Lock()
+	p.timer.Stop()
+	p.mu.Unlock()
+	p.cancel()
 }
 
 // maxSuccessBody caps a decoded success response, as the Codex client does.
@@ -130,8 +200,9 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 		"client_id":     OAuthClientID,
 	})
 
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	send, reply := c.refreshBounds()
+	reqCtx, phase := startRefreshPhase(ctx, send, reply)
+	defer phase.stop()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.TokenURL, bytes.NewReader(body))
 	if err != nil {
 		debugf("OAuth refresh failed: %v", err)
@@ -143,13 +214,16 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		debugf("OAuth refresh failed: %v", err)
-		return RefreshOutcome{Error: ErrTransient}
+		return RefreshOutcome{Error: ErrTransient, Unanswered: phase.written()}
 	}
 	defer resp.Body.Close()
+	// From here on the request was written: only a parsed success or a 4xx
+	// is a verdict on the grant, anything else may have spent it.
+	noVerdict := RefreshOutcome{Error: ErrTransient, Unanswered: true}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		debugf("OAuth refresh failed: HTTP %d redirect, not followed", resp.StatusCode)
-		return RefreshOutcome{Error: ErrTransient}
+		return noVerdict
 	}
 	if resp.StatusCode >= 400 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
@@ -161,23 +235,31 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 			(bytes.Contains(errBody, []byte("invalid_grant")) || bytes.Contains(errBody, []byte("invalid_client"))) {
 			return RefreshOutcome{Error: ErrInvalidGrant}
 		}
+		if resp.StatusCode >= 500 {
+			return noVerdict
+		}
 		return RefreshOutcome{Error: ErrTransient}
 	}
 
-	respData, ok := decodeResponseMap(io.LimitReader(resp.Body, maxSuccessBody))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSuccessBody))
+	if err != nil {
+		debugf("OAuth refresh failed: token response cut off: %T", err)
+		return noVerdict
+	}
+	respData, ok := decodeResponseMap(bytes.NewReader(raw))
 	if !ok {
 		debugf("OAuth refresh failed: undecodable token response")
-		return RefreshOutcome{Error: ErrTransient}
+		return noVerdict
 	}
 	accessToken, ok := respData["access_token"].(string)
 	if !ok || accessToken == "" {
 		debugf("OAuth refresh failed: access_token missing or not a non-empty string")
-		return RefreshOutcome{Error: ErrTransient}
+		return noVerdict
 	}
 	expiresIn, ok := numFloat(respData["expires_in"])
 	if !ok || !(expiresIn > 0 && expiresIn < maxExpiresIn) {
 		debugf("OAuth refresh failed: expires_in missing or out of range")
-		return RefreshOutcome{Error: ErrTransient}
+		return noVerdict
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()
@@ -194,7 +276,7 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 	rotated, err := json.Marshal(data)
 	if err != nil {
 		debugf("OAuth refresh failed: re-encode: %v", err)
-		return RefreshOutcome{Error: ErrTransient}
+		return noVerdict
 	}
 	return RefreshOutcome{Credentials: string(rotated), TokenAccount: parseTokenAccount(respData)}
 }

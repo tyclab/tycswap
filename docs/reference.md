@@ -6195,6 +6195,11 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   meanwhile (another process refreshed it, or a switch wrote it back) the
   newer credential is used and nothing is refreshed. A busy lock skips the
   refresh for that pass. The Codex side has worked this way from the start.
+  A refresh request that cannot be sent within 5 s is dropped; once sent, its
+  reply is waited for up to 30 s, since the server may already have replaced
+  the refresh token (DESIGN A129). The log names every refresh of a stored
+  login (INFO) and warns when a sent one got no reply: a later `re-login
+  needed` for that account comes from it.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

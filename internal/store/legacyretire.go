@@ -188,9 +188,7 @@ func (s *Store) RefreshLegacyLogin(ctx context.Context, c oauth.Client, number, 
 	if c == nil || oauth.ExtractAccessToken(value) == "" {
 		return oauth.RefreshOutcome{Error: oauth.ErrTransient}, nil
 	}
-	reqCtx, cancel := context.WithTimeout(ctx, GuardedRefreshTimeout)
-	defer cancel()
-	out := c.Refresh(reqCtx, value)
+	out := s.SendRefresh(ctx, c, "account "+number+"'s session profile login", value)
 	switch {
 	case out.Credentials != "":
 		if err := s.writeLegacyLogin(owner.ProfileDir, out.Credentials); err != nil {

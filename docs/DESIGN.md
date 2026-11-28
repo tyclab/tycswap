@@ -10918,3 +10918,61 @@ a start selects as before and says nothing. If the hook does not run, or its
 move is deferred, that session's requests go out on the own login's account
 until its status line or the tick moves it; no other session is affected.
 Sessions on Windows and macOS have no link.
+
+## A129. A refresh waits for the reply once its request is written
+
+**Why.** A refresh grant is single-use: once the token endpoint processed the
+request, the old refresh token is dead. The guarded refreshes cut the whole
+request at 5 s (and the client at 10 s), so a reply slower than that was
+dropped after the server had rotated the token; the successor was lost, and
+the account showed `re-login needed` later with no line in the log that
+explained it. Claude Code itself waits 30 s for the same request.
+
+**The rule.** `oauth.HTTPClient.Refresh` has two bounds, both fields of the
+client (`RefreshSendTimeout`, `RefreshReplyTimeout`; zero takes
+`DefaultRefreshSendTimeout`, 5 s, and `DefaultRefreshReplyTimeout`, 30 s):
+
+- Until the request is written (DNS, connect, TLS, write; httptrace's
+  `WroteRequest`) the send bound holds. A refresh runs under the store lock,
+  which a waiting command gives up on after `filelock.DefaultTimeout` (10 s),
+  so on a dead network a refresh holds the lock no longer than before. A
+  failure here spent nothing and is `transient` as before.
+- Once it is written the reply is waited for up to the reply bound. Only a
+  parsed success or a 4xx is a verdict on the grant; a timeout, a reset, a
+  3xx or 5xx, or a 2xx that is cut off or cannot be read is `transient` with
+  `RefreshOutcome.Unanswered` set: the grant may be spent.
+
+The guarded refreshes (`RefreshBackupGuarded`, `RefreshFableBackupGuarded`,
+`RefreshFableLiveGuarded`, `RefreshLegacyLogin`, the group login's
+`refreshExpiredGroupLogin`) no longer cut the context; `GuardedRefreshTimeout`
+is gone. They send through `Store.SendRefresh`, which logs INFO `Refreshing
+the token of <subject>` before, WARNING when the outcome is unanswered (the
+refresh token may be spent, and a later `re-login needed` comes from this)
+and for `invalid_grant`, and DEBUG for any other failure, a request that
+never went out included: an offline box writes no line per account per poll
+beyond the usage fetch's own warning. The client's own lines stay at DEBUG
+and never carry a token.
+
+The other callers pass `context.Background()` and so get the full reply wait:
+the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the
+auto-switch freshen, the Fable tick and `start`. Codex has its own client
+(`internal/codex/api`) and is unchanged.
+
+**Limits.** A refresh whose request went out on a network that then swallows
+packets holds the store lock up to 35 s. `tycswap start` refreshes the start
+target it selects before it launches, one candidate after another, so a token
+endpoint that accepts and does not answer delays a launch up to 35 s per
+candidate instead of 5 s; giving up earlier could cost the start login's
+sign-in. A command that waits for the lock
+meanwhile gives up after 10 s, as it did for any long holder before; none of
+them crashes. The auto-switch tick skips that round (a freshen that could not
+take the lock reports `transient`, and with every candidate so the tick says
+`could not freshen any candidate (network?)`; `auto --once` exits 1 on a switch
+that could not take it). `start --check` exits 0 and may show the lock's
+message in the status line. `start` launches on the current login and says
+`could not refresh the login; check the connection or renew it with tycswap
+add --login` or `Could not select a start login: …; continuing`; a parked or
+recovered Fable start exits 1 without launching. The active login's usage
+fetch with no Claude Code running refreshes before it takes the lock and
+discards the successor when the lock stays busy for 10 s; that path is
+unchanged here.
