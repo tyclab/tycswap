@@ -123,11 +123,13 @@ func startRefreshPhase(ctx context.Context, send, reply time.Duration) (context.
 func (p *refreshPhase) wrote(info httptrace.WroteRequestInfo) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if info.Err != nil || p.sent || !p.timer.Stop() {
+	if info.Err != nil || p.sent {
 		return
 	}
 	p.sent = true
-	p.timer = time.AfterFunc(p.reply, p.cancel)
+	if p.timer.Stop() {
+		p.timer = time.AfterFunc(p.reply, p.cancel)
+	}
 }
 
 func (p *refreshPhase) written() bool {
