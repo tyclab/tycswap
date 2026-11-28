@@ -189,6 +189,14 @@ jobs:
     needs: [decide, tag, linux-windows]
     if: ${{ !cancelled() && needs.linux-windows.result == 'success' }}
     runs-on: ubuntu-latest
+    # One publish of a tag at a time, across this job, attach-darwin and every
+    # run: two at once each created a draft while GitHub's list did not yet
+    # show the other's, and the tag split into two releases (DESIGN A121).
+    # Nothing is cancelled in progress; a pending job a third one displaces
+    # is cancelled before its first step, and the Retry workflow reruns it.
+    concurrency:
+      group: release-publish-${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -217,6 +225,10 @@ jobs:
     needs: [decide, tag, darwin]
     if: ${{ !cancelled() && needs.darwin.result == 'success' }}
     runs-on: ubuntu-latest
+    # The same group as publish's: the second of the two finds the first one's release.
+    concurrency:
+      group: release-publish-${{ needs.tag.outputs.tag || needs.decide.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

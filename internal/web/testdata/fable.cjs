@@ -188,11 +188,12 @@ if (process.argv[3] === 'editor') {
   assert.equal(ids.onboard.hidden, true);
   ctx.renderOnboarding(plainState());
   assert.equal(ids['fable-signin'].hidden, true);
-  // The server's warning while no start login has a login of its own (A126).
-  const own = plainState(); own.ownStartLoginWarning = 'No start login has a Mythos login of its own.';
+  // The server's warning while no start login has a login of its own (A126),
+  // from the /api/state the Go test served over the dashboard's merged source.
+  const own = JSON.parse(fs.readFileSync(process.argv[4], 'utf8'));
   ctx.renderOnboarding(own);
-  assert.equal(ids['own-start-login'].hidden, false);
-  assert.equal(text(ids['own-start-login']), own.ownStartLoginWarning);
+  assert.equal(ids['own-start-login'].hidden, false, 'the served state carries no start-login warning');
+  assert.equal(text(ids['own-start-login']), 'No start login has a Mythos login of its own.');
   assert.equal(ids.onboard.hidden, false);
   ctx.renderOnboarding(plainState());
   assert.equal(ids['own-start-login'].hidden, true);

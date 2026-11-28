@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -198,7 +199,8 @@ func rankOptions(f *fakeSwitcher, ranks map[string]int) []Option {
 	for num, rank := range ranks {
 		f.reserved[num] = rank > 0
 	}
-	return []Option{reservedOption(f), WithReservedRank(func(n string) int { return ranks[n] })}
+	rank := func(n string) int { return ranks[n] }
+	return []Option{reservedOption(f), WithReservedRank(rank), WithReservedRankRead(func() func(string) int { return rank })}
 }
 
 // Two accounts below every bar, the Fable store's (rank 2) and one whose
@@ -265,5 +267,34 @@ func TestReservedMythosRanksAfterTheFableStore(t *testing.T) {
 				t.Fatalf("outcome = %v, current = %q, want a switch to 3 (kinds=%v)", got, deref(f.current), rec.kinds())
 			}
 		})
+	}
+}
+
+// A target whose rank rose between the policy read and the switch, here by a
+// Mythos session that started on its Mythos login while it was freshened, is
+// no target: the ranks are read again right before the switch, and the switch
+// is dropped (DESIGN A131).
+func TestReservedHandOverDropsATargetThatRoseInRankBeforeTheSwitch(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 10)))
+	f.creds["2"] = nearExpiryCreds(clk, "r2")
+	ranks := map[string]int{"1": RankFableStore, "2": RankReserved}
+	refreshed := false
+	options := append(rankOptions(f, ranks), WithOAuthClient(fakeOAuth(func(string) oauth.RefreshOutcome {
+		refreshed = true
+		ranks["2"] = RankMythos
+		return oauth.RefreshOutcome{Credentials: farFutureCreds(clk, "r2-new")}
+	})))
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, options...)
+	got := e.Tick()
+	if !refreshed {
+		t.Fatal("the target was not freshened")
+	}
+	if got == Switched || deref(f.current) != "1" {
+		t.Fatalf("outcome = %v, current %q: the hand-over landed on a rank %d account from rank %d", got, deref(f.current), ranks["2"], ranks["1"])
+	}
+	if ns, _ := rec.last("no-switch").(NoSwitchEvent); ns.Reason != "reserved-no-target" || ns.Detail != "account 2 ranks no lower than the active account any more" {
+		t.Fatalf("no-switch = %+v", ns)
 	}
 }

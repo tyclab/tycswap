@@ -10370,7 +10370,8 @@ tagged it finishes it, rerun by Retry when a job found no runner. A rerun
 lacks and changes nothing else: no second tag, no second upload, the notes of
 a published release untouched (`TestRerunOfAFinishedReleaseChangesNothing`).
 Two runs creating the release at once keep the older and delete the other's
-draft.
+draft, when the list after the create shows the other's; it may not yet
+(A121), so `publish` and `attach-darwin` never run at once for one tag.
 
 **By hand.** A pushed `v*` tag runs as before and leaves a draft, with the tag
 commit's section as its notes when it has one. `workflow_dispatch` with a tag
@@ -10655,6 +10656,23 @@ commit adds over the newest tag reachable from its first parent
 (`release.NotesAt`), and with none the draft keeps the placeholder.
 `releasectl decide` still accepts `--ci-run` and `--ci-attempt`, and `tag`
 `--tag`, so a rerun of a Release run started before A121 finds its flags.
+
+**One publish of a tag at a time.** `publish` and `attach-darwin` both run
+`releasectl publish`, which finds the tag's release or creates its draft
+(`Publisher.ensure`). On v0.25.8 the two ran at the same moment, each created
+a draft, and neither saw the other's in the list it read right after its own
+create, so `ensure`'s rule that the younger draft is deleted never fired: the
+published release had Linux, Windows and a three-line `SHA256SUMS`, and the
+macOS builds sat in a second, draft release with the same tag. Both jobs now
+share one job-level `concurrency` group keyed on the tag
+(`release-publish-<tag>`, `cancel-in-progress: false`), across every run, so
+the second finds the first one's release. A pending job that a third one in
+the group displaces is cancelled before its first step, which is the
+no-runner signature: the Retry workflow reruns it, and the rerun finds the
+release. `ensure`'s clean-up stays as the second line of defence; it cannot
+be relied on alone, because GitHub's release list can lag a create
+(`TestTwoRunsCreatingTheReleaseSplitWhenTheListLags` shows the split when
+the list after the create shows only the run's own draft).
 
 **Holding a release back** is not in the normal path, and nothing needs it:
 a change that must not ship is reverted by the next pull request, whose
@@ -10966,7 +10984,10 @@ not signed in: `Give Account-<n> one with <commands>.`
   after their Fable and Mythos lines; `status --json`, `list --json` and the
   dashboard's state carry it as `ownStartLoginWarning`, present only while it
   holds, and the dashboard shows it as a notice above the accounts, beside
-  A115's Fable sign-in notice. It is evaluated where the state is built, so a
+  A115's Fable sign-in notice. The dashboard reads its snapshot through the
+  providers' merged source, whose merge carries the field with the Claude
+  snapshot's Fable and Mythos fields (until 2026-11-28 it dropped it, and the
+  page showed no notice). It is evaluated where the state is built, so a
   page drawing a WSL box's state shows that box's answer.
 
 A box whose start logins never had a Mythos mark or login is not nagged, as
@@ -10986,8 +11007,10 @@ present with an enrolled start login and no ready one on Linux, naming the
 sign-in, or the Mythos mark once it was removed; absent with a ready one,
 without marks, with auto-switch off, and without a Mythos mark or login),
 `TestOwnStartLoginWarningSkipsAnAccountThatIsNoOAuthLogin`.
-`web`: the `signin` harness of `TestAppJSFableSignIn` shows and hides the
-dashboard notice.
+`providers`: `TestMultiSnapshotSourcePreservesMythosLoginModelsAndStartLoginWarning`
+(with and without Codex). `web`: the `signin` harness of
+`TestAppJSFableSignIn` shows the notice from the state the server serves over
+the merged source, and hides it.
 
 ## A127. The account-mismatch line is logged at DEBUG
 
@@ -11091,11 +11114,18 @@ send bound and the reply wait are tested over HTTP/1.1 and over HTTP/2, the
 token endpoint's protocol; `WroteRequest` fires on both.
 
 A successor that was already received is stored under the locks; that wait
-is as long as a refresh can hold the store lock, the send bound plus the
-reply bound (`persistLockWait` in `reporting`, from the two constants). The
-active login's refresh without a running client is sent before it takes the
-locks, so a guarded refresh of another account that awaits its reply no
-longer makes it drop the successor after 10 s.
+is as long as one guarded refresh can hold the store lock: the Fable store's
+live refresh waits inside it for Claude Code's two locks of that store
+(`cclock.DefaultTimeoutS` each), then its send and reply bounds run, 53 s in
+all (`store.GuardedRefreshHold`, `persistLockWait` in `reporting`, from the
+existing constants). Until 2026-11-28 the wait was the send and reply bounds
+alone, 35 s, and a successor received while such a refresh still waited for
+a Claude Code lock was discarded with its refresh token spent. The active
+login's refresh without a running client is sent before it takes the locks,
+so a guarded refresh of another account that awaits its reply no longer
+makes it drop the successor after 10 s. Each Claude Code lock wait can run
+one backoff step (at most 0.5 s) past its bound, which the wait does not
+cover.
 
 The other callers pass `context.Background()` and so get the full reply wait:
 the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the
@@ -11150,7 +11180,9 @@ key. Where a live login would be written into a slot it is checked:
   kept.` A group or legacy release that meets `wiped` holds the login as it
   held `unresolved` before.
 - `add` of the live login refuses it with a validation error that asks for a
-  new sign-in (`tycswap add --login`).
+  new sign-in (`tycswap add --login`), before it asks to overwrite a slot or
+  changes anything: until 2026-11-28 the refusal came after the Fable store's
+  live login of the displaced account had been emptied.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.
@@ -11212,6 +11244,21 @@ Within a bar tier a target of a higher rank sorts after one of a lower rank
 under both strategies, and an idle Opus start (A105) takes a rank 3 account
 after a rank 2 one, both after the others and before the logins at a limit.
 No other trigger changes.
+
+**The recheck.** The policy, and with it every rank, is read once per tick
+(A116). A Mythos session that starts on the target's Mythos login after that
+read would let the hand-over land on an account that is rank 3 by then, and
+the next tick would move back. So right before a `reserved` switch, under the
+engine's state lock and after the selection's own recheck, the engine reads
+the policy afresh (`autoswitch.WithReservedRankRead`) and drops the switch
+when the target's rank is no longer strictly lower than the current
+account's: `reserved-no-target` with `account N ranks no lower than the
+active account any more`. The tick tries no other target; the next one
+decides on its own read. The session records' lock is not taken across the
+switch: the read and the switch stay two steps, so a session that starts on
+the target's Mythos login between the fresh read and the switch, or while the
+switch runs, is still not seen, and the next tick may move the default login
+back once.
 
 **Why 3 after 2.** Mythos room is the scarcest a box has, and the account
 whose Mythos login runs sessions is the one that needs it; the Fable

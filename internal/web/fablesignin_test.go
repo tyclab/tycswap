@@ -3,11 +3,16 @@
 package web
 
 import (
+	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/tyclab/tycswap/internal/providers"
 )
 
 // The state's fable object carries the set the snapshot names.
@@ -29,7 +34,16 @@ func TestAppJSFableSignIn(t *testing.T) {
 	if err != nil {
 		t.Skip("node not installed; Fable sign-in page test skipped")
 	}
-	if out, err := exec.Command(node, "testdata/fable.cjs", "static/app.js", "signin").CombinedOutput(); err != nil {
+	// The warning reaches the page through the dashboard's merged snapshot source (DESIGN A126).
+	h := newHarness(t, func(h *harness, d *Deps) {
+		h.fa.snap.OwnStartLoginWarning = "No start login has a Mythos login of its own."
+		d.Snapshot = providers.NewMultiSnapshotSource(context.Background(), h.fa, nil)
+	})
+	served := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(served, readBody(t, h.get("/api/state")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, "testdata/fable.cjs", "static/app.js", "signin", served).CombinedOutput(); err != nil {
 		t.Errorf("Fable sign-in page: %v\n%s", err, out)
 	}
 	html := staticFile(t, "index.html")

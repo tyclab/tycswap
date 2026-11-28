@@ -72,7 +72,12 @@ func (fx fableTickFixture) build(t *testing.T) (*core.Switcher, *refreshes) {
 	cleanHome(t)
 	clk := testutil.FixedClock(t, fableTickNow)
 	asked := &refreshes{}
-	oc := &oauth.FakeClient{RefreshFn: func(_ context.Context, creds string) oauth.RefreshOutcome {
+	oc := &oauth.FakeClient{RefreshFn: func(ctx context.Context, creds string) oauth.RefreshOutcome {
+		// The client bounds a refresh; the Fable tick's live refresh, its
+		// keep-alive and its engine put no deadline of their own on it (DESIGN A129).
+		if at, ok := ctx.Deadline(); ok && time.Until(at) < oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+			t.Errorf("the caller ends the refresh %s from now, before the client's own bounds", time.Until(at).Round(time.Millisecond))
+		}
 		asked.mu.Lock()
 		asked.creds = append(asked.creds, creds)
 		asked.mu.Unlock()

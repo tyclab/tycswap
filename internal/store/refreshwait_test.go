@@ -143,3 +143,44 @@ func TestGuardedRefreshLogsFailureReason(t *testing.T) {
 	}
 	noTokens(t, log, "at-2", "rt-2")
 }
+
+// noCallerDeadline is a client that fails the test when the context a guarded
+// refresh hands it ends before the client's own send and reply bounds: the
+// client bounds a refresh, its callers do not (DESIGN A129).
+func noCallerDeadline(t *testing.T, fresh string) *oauth.FakeClient {
+	return &oauth.FakeClient{RefreshFn: func(ctx context.Context, _ string) oauth.RefreshOutcome {
+		if at, ok := ctx.Deadline(); ok && time.Until(at) < oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+			t.Errorf("the caller ends the refresh %s from now, before the client's own bounds", time.Until(at).Round(time.Millisecond))
+		}
+		return oauth.RefreshOutcome{Credentials: fresh}
+	}}
+}
+
+// Each guarded refresh hands the client the caller's context, with no
+// deadline of its own around the request.
+func TestGuardedRefreshesPutNoDeadlineOnTheClient(t *testing.T) {
+	t.Run("default login", func(t *testing.T) {
+		s := twoSlotStore(t)
+		fresh := lineageCreds("at-2b", "rt-2b")
+		if out := s.RefreshBackupGuarded(context.Background(), noCallerDeadline(t, fresh), "2", "user2@example.com", lineageCreds("at-2", "rt-2")); out.Credentials != fresh {
+			t.Fatalf("RefreshBackupGuarded = %+v, want the successor", out)
+		}
+	})
+	t.Run("Fable login", func(t *testing.T) {
+		s := fableFixture(t)
+		held, fresh := fableCreds("at-f2", "rt-f2"), fableCreds("at-f2b", "rt-f2b")
+		putFableLogin(t, s, "2", held)
+		if out := s.RefreshFableBackupGuarded(context.Background(), noCallerDeadline(t, fresh), "2", fableEmails["2"], held); out.Credentials != fresh {
+			t.Fatalf("RefreshFableBackupGuarded = %+v, want the successor", out)
+		}
+	})
+	t.Run("Fable store's live login", func(t *testing.T) {
+		s := fableFixture(t)
+		held, fresh := fableCreds("at-f2", "rt-f2"), fableCreds("at-f2b", "rt-f2b")
+		putFableLogin(t, s, "2", held)
+		putFableLive(t, s, held)
+		if out := s.RefreshFableLiveGuarded(context.Background(), noCallerDeadline(t, fresh), "2", fableEmails["2"], held); out.Credentials != fresh {
+			t.Fatalf("RefreshFableLiveGuarded = %+v, want the successor", out)
+		}
+	})
+}

@@ -111,7 +111,10 @@ func (p Publisher) Run(ctx context.Context) error {
 }
 
 // ensure finds tag's one release or creates it as a draft. Two runs that
-// both create one keep the older, and the other deletes its own.
+// both create one keep the older, and the other deletes its own, but only
+// when the list after its create shows the other's draft, which GitHub's list
+// may not yet do: the Release workflow never runs two publishes of one tag at
+// once, and this is the second line of defence (DESIGN A121).
 func (p Publisher) ensure(ctx context.Context) (Release, error) {
 	mine, err := p.releases(ctx)
 	if err != nil || len(mine) == 1 {

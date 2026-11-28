@@ -276,7 +276,7 @@ func TestMultiSnapshotSourceWithoutCodexIsClaudeOnly(t *testing.T) {
 	}
 }
 
-func TestMultiSnapshotSourcePreservesMythosLoginAndModels(t *testing.T) {
+func TestMultiSnapshotSourcePreservesMythosLoginModelsAndStartLoginWarning(t *testing.T) {
 	for _, name := range []string{"Claude only", "Claude and Codex"} {
 		t.Run(name, func(t *testing.T) {
 			isolate(t)
@@ -290,13 +290,17 @@ func TestMultiSnapshotSourcePreservesMythosLoginAndModels(t *testing.T) {
 
 			summary := map[string]any{"number": 1, "countedWindows": []string{"5h", "7d", "Fable"}, "linkedSessions": 1}
 			row := reporting.AccountSnapshot{Number: "1", MythosLogin: &reporting.MythosLogin{Live: true, Status: "ok"}, Models: []string{"mythos"}}
-			src := &claudeSource{snapshot: reporting.AccountsSnapshot{Mythos: summary, Accounts: []reporting.AccountSnapshot{row}}}
+			const warning = "No start login has a Mythos login of its own."
+			src := &claudeSource{snapshot: reporting.AccountsSnapshot{Mythos: summary, Accounts: []reporting.AccountSnapshot{row}, OwnStartLoginWarning: warning}}
 			snap := NewMultiSnapshotSource(context.Background(), src, codex).AccountsSnapshot(set())
 			if !reflect.DeepEqual(keys(*snap), wantKeys) {
 				t.Fatalf("merged rows %v, want %v", keys(*snap), wantKeys)
 			}
 			if !reflect.DeepEqual(snap.Mythos, summary) {
 				t.Errorf("merged Mythos summary %v, want %v", snap.Mythos, summary)
+			}
+			if snap.OwnStartLoginWarning != warning {
+				t.Errorf("merged start-login warning %q, want %q (DESIGN A126)", snap.OwnStartLoginWarning, warning)
 			}
 			if got := snap.Accounts[0]; !reflect.DeepEqual(got.MythosLogin, row.MythosLogin) || !reflect.DeepEqual(got.Models, row.Models) {
 				t.Errorf("merged Claude row has login %+v, models %v", got.MythosLogin, got.Models)

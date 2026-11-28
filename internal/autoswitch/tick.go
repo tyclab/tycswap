@@ -766,6 +766,13 @@ func (e *Engine) perform(source, target slotIdentity, trigger, axis string) (tic
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "selection-changed", Detail: "active account or target eligibility changed during selection"})
 			return nil
 		}
+		if trigger == "reserved" && e.rankRead != nil {
+			// A session may have started since the policy was read (DESIGN A131).
+			if rank := e.rankRead(); rank(number) >= rank(source.number) {
+				e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "reserved-no-target", Detail: "account " + number + " ranks no lower than the active account any more"})
+				return nil
+			}
+		}
 		r, err := e.sw.SwitchTo(number, true)
 		if err != nil {
 			return err

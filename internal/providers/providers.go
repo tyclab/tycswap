@@ -142,7 +142,7 @@ func merge(snaps []*reporting.AccountsSnapshot, owners []Provider) (reporting.Ac
 		}
 		if snap.ProviderName() == reporting.ProviderClaude {
 			out.ActiveNumber, out.Fable = snap.ActiveNumber, snap.Fable
-			out.Mythos = snap.Mythos
+			out.Mythos, out.OwnStartLoginWarning = snap.Mythos, snap.OwnStartLoginWarning
 		}
 		for _, a := range snap.Accounts {
 			if a.Provider == "" {

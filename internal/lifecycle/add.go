@@ -106,6 +106,11 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		return cerr.Config("Slot number must be >= 1")
 	}
 
+	// A login add cannot store is refused before anything is asked or changed (DESIGN A130).
+	if err := src.refuseUnstorable(s); err != nil {
+		return err
+	}
+
 	// The confirmation, and only the confirmation, happens here — outside the
 	// lock the commit below holds.
 	confirmed, cancelled, err := confirmDisplacement(s, slot, assumeYes, email, orgUUID)
