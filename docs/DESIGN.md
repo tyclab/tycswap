@@ -11125,7 +11125,9 @@ token). A wait behind a fetch of the same process (the usage fetches of one
 run share the store's lock object) waits on that lock's in-process mutex
 before its timer starts, so it ends with that fetch's own timeouts and
 writes none. A lock refused sooner than its timeout (a nested request) or
-any other failure ends the wait and discards the successor as before. Until 2026-11-28 the wait had a bound summed from
+any other failure ends the wait and discards the successor as before. Tests
+drive both kinds of round: the store lock's timeout, and the default login's
+Claude Code credentials lock, whose 9 s wait `claudeLockWait` shortens. Until 2026-11-28 the wait had a bound summed from
 other code's lock counts, 35 s and then 53 s (the Fable store's live
 refresh: two Claude Code locks, then its send and reply bounds), and both
 were short: the legacy login's refresh holds the store lock over three such

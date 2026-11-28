@@ -247,7 +247,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 // again; a round refused sooner than a timeout, a nested request, or any
 // other failure ends the wait with its error.
 func storeReceivedSuccessor(s *store.Store, num string, fn func() error) error {
-	round := min(s.Lock.Timeout(), cclock.DefaultTimeoutS)
+	round := min(s.Lock.Timeout(), claudeLockWait)
 	for {
 		ran, start := false, time.Now()
 		err := withTripleLock(s, func() error { ran = true; return fn() })
@@ -261,17 +261,21 @@ func storeReceivedSuccessor(s *store.Store, num string, fn func() error) error {
 	}
 }
 
+// claudeLockWait is how long withTripleLock waits for each Claude Code lock;
+// a test shortens it.
+var claudeLockWait = cclock.DefaultTimeoutS
+
 // withTripleLock runs fn under FileLock → Claude credentials lock → Claude
 // config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
 func withTripleLock(s *store.Store, fn func() error) error {
 	return s.Lock.With(func() error {
-		credLock, err := cclock.AcquireCredentials(0, s.Clk)
+		credLock, err := cclock.AcquireCredentials(claudeLockWait, s.Clk)
 		if err != nil {
 			return err
 		}
 		defer credLock.Release()
-		cfgLock, err := cclock.Acquire(cclock.ConfigLockDir(), 0, s.Clk)
+		cfgLock, err := cclock.Acquire(cclock.ConfigLockDir(), claudeLockWait, s.Clk)
 		if err != nil {
 			return err
 		}

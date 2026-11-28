@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -139,6 +140,36 @@ func TestFetchActiveUsageStoresTheSuccessorAfterSeveralLockTimeouts(t *testing.T
 	}
 	if log, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log")); strings.Contains(string(log), "new-refresh") || strings.Contains(string(log), "new-access") {
 		t.Errorf("the log carries a token")
+	}
+}
+
+// Claude Code holds the default login's credentials lock through several of
+// its lock waits: each one that times out writes the warning, and the
+// successor is stored once the lock is free (DESIGN A129).
+func TestFetchActiveUsageStoresTheSuccessorAfterSeveralClaudeCodeLockTimeouts(t *testing.T) {
+	s, creds := refreshingStore(t, nil)
+	// A Claude Code lock is polled every 0.25-0.5 s, so a wait of 20 ms lasts one poll: the hold spans at least three.
+	const wait, hold = 20 * time.Millisecond, 1500 * time.Millisecond
+	prev := claudeLockWait
+	claudeLockWait = wait
+	t.Cleanup(func() { claudeLockWait = prev })
+	lock := cclock.CredentialsLockDir()
+	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(lock) })
+	time.AfterFunc(hold, func() { _ = os.Remove(lock) })
+	if rec := fetchActiveUsage(s, "1", skipEmail, creds); rec.SkipReason != "" {
+		t.Fatalf("SkipReason = %q, want the successor stored", rec.SkipReason)
+	}
+	if backup, _ := s.ReadAccountCredentials("1", skipEmail); !strings.Contains(backup, "new-refresh") {
+		t.Errorf("the backup does not hold the successor")
+	}
+	if n := logCount(t, s, logging.LevelWarning, "Still waiting to store the refreshed login of account 1"); n < 2 {
+		t.Errorf("%d waiting warnings over a hold of %s, want one per lock wait", n, hold)
 	}
 }
 
