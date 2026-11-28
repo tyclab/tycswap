@@ -223,6 +223,13 @@ func backUpFableOutgoing(f *store.Store, data *store.SequenceData, ls store.Live
 	if err != nil || now == "" {
 		return nil, err
 	}
+	if ls.Slot != "" && oauth.TokensWiped(now) {
+		rec, _ := accountRec(data, ls.Slot)
+		if f.Log != nil {
+			f.Log.Warningf("The Fable store's login carries no tokens (Claude Code clears them when a refresh is rejected); account %s's Fable login was kept", ls.Slot)
+		}
+		return numRef(ls.Slot, recStr(rec, "email")), nil
+	}
 	if ls.Slot == "" {
 		if _, err := f.Creds.WriteUnclaimed(now, map[string]any{"lineage": "fable"}); err != nil {
 			return nil, err

@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"time"
 
 	"github.com/tyclab/tycswap/internal/oauth"
 )
@@ -12,11 +11,24 @@ import (
 // live session, or its backup is gone.
 const RefreshDeclined = "refresh_declined"
 
-// GuardedRefreshTimeout bounds the HTTP refresh performed under the store
-// lock. It is below the lock's own timeout (filelock.DefaultTimeout, 10 s), so
-// a command waiting for the lock while a refresh runs gets it before it gives
-// up.
-const GuardedRefreshTimeout = 5 * time.Second
+// SendRefresh sends c's refresh of creds, subject's login ("account 3"), and
+// logs it: INFO before, WARNING when the request went out and no verdict came
+// (the grant may be spent) and for invalid_grant, DEBUG otherwise. The client
+// bounds the request (oauth.DefaultRefreshSendTimeout, DESIGN A129).
+func (s *Store) SendRefresh(ctx context.Context, c oauth.Client, subject, creds string) oauth.RefreshOutcome {
+	s.Log.Infof("Refreshing the token of %s", subject)
+	out := c.Refresh(ctx, creds)
+	switch {
+	case out.Credentials != "":
+	case out.Unanswered:
+		s.Log.Warningf("The token refresh of %s was sent but got no answer; its refresh token may be spent, and a later \"re-login needed\" for this account comes from this", subject)
+	case out.Error == oauth.ErrInvalidGrant:
+		s.Log.Warningf("The token refresh of %s failed (%s)", subject, out.Error)
+	default:
+		s.Log.Debugf("The token refresh of %s failed (%s)", subject, out.Error)
+	}
+	return out
+}
 
 // The lock is taken BEFORE the refresh: a rotated refresh token may die once issued, so an unpersistable refresh must not run.
 // Under it the slot is re-checked and the backup re-read; a lineage that moved on is returned as stored, unrefreshed.
@@ -46,9 +58,7 @@ func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, e
 			}
 			return nil
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, GuardedRefreshTimeout)
-		defer cancel()
-		out = c.Refresh(reqCtx, backup)
+		out = s.SendRefresh(ctx, c, "account "+num, backup)
 		if out.Credentials == "" {
 			return nil
 		}

@@ -11040,3 +11040,109 @@ such leftover, so it has no measured case. The others are the `*.tmp` of
 `.tycswap-copy-*` and `.tycswap-upgrade-*`; `.tycswap-migrate-*.tmp` and
 `login.*` have their own cleanups. A temp file outside the data root is never
 removed.
+
+## A129. A refresh waits for the reply once its request is written
+
+**Why.** A refresh grant is single-use: once the token endpoint processed the
+request, the old refresh token is dead. The guarded refreshes cut the whole
+request at 5 s (and the client at 10 s), so a reply slower than that was
+dropped after the server had rotated the token; the successor was lost, and
+the account showed `re-login needed` later with no line in the log that
+explained it. Claude Code itself waits 30 s for the same request.
+
+**The rule.** `oauth.HTTPClient.Refresh` has two bounds, both fields of the
+client (`RefreshSendTimeout`, `RefreshReplyTimeout`; zero takes
+`DefaultRefreshSendTimeout`, 5 s, and `DefaultRefreshReplyTimeout`, 30 s):
+
+- Until the request is written (DNS, connect, TLS, write; httptrace's
+  `WroteRequest`) the send bound holds. A refresh runs under the store lock,
+  which a waiting command gives up on after `filelock.DefaultTimeout` (10 s),
+  so on a dead network a refresh holds the lock no longer than before. A
+  failure here spent nothing and is `transient` as before.
+- Once it is written the reply is waited for up to the reply bound. Only a
+  parsed success or a 4xx is a verdict on the grant; a timeout, a reset, a
+  3xx or 5xx, or a 2xx that is cut off or cannot be read is `transient` with
+  `RefreshOutcome.Unanswered` set: the grant may be spent.
+
+The guarded refreshes (`RefreshBackupGuarded`, `RefreshFableBackupGuarded`,
+`RefreshFableLiveGuarded`, `RefreshLegacyLogin`, the group login's
+`refreshExpiredGroupLogin`) no longer cut the context; `GuardedRefreshTimeout`
+is gone. They send through `Store.SendRefresh`, which logs INFO `Refreshing
+the token of <subject>` before, WARNING when the outcome is unanswered (the
+refresh token may be spent, and a later `re-login needed` comes from this)
+and for `invalid_grant`, and DEBUG for any other failure, a request that
+never went out included: an offline box writes no line per account per poll
+beyond the usage fetch's own warning. The client's own lines stay at DEBUG
+and never carry a token.
+
+The other callers pass `context.Background()` and so get the full reply wait:
+the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the
+auto-switch freshen, the Fable tick and `start`. Codex has its own client
+(`internal/codex/api`) and is unchanged.
+
+**Limits.** A refresh whose request went out on a network that then swallows
+packets holds the store lock up to 35 s. `tycswap start` refreshes the start
+target it selects before it launches, one candidate after another, so a token
+endpoint that accepts and does not answer delays a launch up to 35 s per
+candidate instead of 5 s; giving up earlier could cost the start login's
+sign-in. A command that waits for the lock
+meanwhile gives up after 10 s, as it did for any long holder before; none of
+them crashes. The auto-switch tick skips that round (a freshen that could not
+take the lock reports `transient`, and with every candidate so the tick says
+`could not freshen any candidate (network?)`; `auto --once` exits 1 on a switch
+that could not take it). `start --check` exits 0 and may show the lock's
+message in the status line. `start` launches on the current login and says
+`could not refresh the login; check the connection or renew it with tycswap
+add --login` or `Could not select a start login: …; continuing`; a parked or
+recovered Fable start exits 1 without launching, as on any lock it cannot
+take: it refuses rather than launch on an unverified login. No code changed
+for these: the only new long holder is a sent refresh whose reply the network
+holds back, which the tick's `(network?)` and `start`'s `check the connection`
+name, and the lock's own message says another instance holds it. The active
+login's usage fetch with no Claude Code running refreshes before it takes the
+lock and discards the successor when the lock stays busy for 10 s; that path
+is unchanged here, and such a hold needs a reply the network holds back while
+this fetch's own reply came through.
+
+## A130. A login whose tokens Claude Code wiped never replaces a stored login
+
+**Why.** When the server rejects a refresh, Claude Code empties
+`accessToken` and `refreshToken` in place and keeps the credential. Such a
+login has no token to resolve its identity with, so a switch away classified
+it `unresolved` and its fail-open backup replaced the outgoing slot's stored
+login (the previous one stays in `.prev`); a switch back then installed the
+wiped login, and the account needed a new sign-in although its stored login
+may still have worked. `add` of the live login stored it as well.
+
+**The rule.** `oauth.TokensWiped` is the one predicate: a JSON object that
+carries neither an access nor a refresh token under `claudeAiOauth`, the
+object absent included. Not wiped: a blank access token with a refresh
+token, a refresh token alone, a setup token (access token only), a raw API
+key. Where a live login would be written into a slot it is checked:
+
+- The switch's ownership oracle returns `wiped` after `own-bytes` and
+  `own-family` (an identical backup is wiped already). The switch backs up
+  the outgoing config only, as for `own-bytes`, keeps the stored login, and
+  warns; a wiped login the last install attributes is not stashed first
+  either `The live login carries no tokens (…); Account-N's stored login was
+  kept.` A group or legacy release that meets `wiped` holds the login as it
+  held `unresolved` before.
+- `add` of the live login refuses it with a validation error that asks for a
+  new sign-in (`tycswap add --login`).
+- The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
+  the last install's account) is not written into the Fable login; a warning
+  is logged.
+- Parking the default login (`parkDefaultLogin`) keeps the stored login and
+  logs a warning.
+- `import` refuses an entry whose credential is wiped: an export taken of a
+  wiped live login would otherwise overwrite the slot on the importing side.
+
+The harvest of a rotated live login (`harvestLiveCredential`,
+`HarvestFableLive`) and the `own-rotated` branch cannot reach a wiped login:
+they need the chain record or a profile answer, and both need an access
+token. A `--login` sign-in is checked by `CheckLogin`; renumbering and
+rollback move stored logins only.
+
+**Limits.** A login with only one of its two tokens left is not wiped and is
+handled as before. A live JSON object with no `claudeAiOauth` at all counts
+as wiped, so `add` refuses it.
