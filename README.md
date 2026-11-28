@@ -790,7 +790,10 @@ recorded login has room also with auto-switch off). Its SessionStart hook
 moves it on, in print mode too: a resume to its recorded login while that
 has room, else to the selected login. Claude Code reads its login's
 organization settings as it comes up (DESIGN A120). The native client
-checks model access on that login. In-process subagents share their
+checks model access on that login. While a session runs on an account's
+Mythos login, auto-switch takes that account last for the default login,
+after the Fable store's account, and never moves the default login back and
+forth between two such accounts. In-process subagents share their
 parent session's login. Removing the account also removes its independent
 credential. Moving the same account to a new slot preserves the credential.
 

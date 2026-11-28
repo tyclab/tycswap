@@ -305,3 +305,37 @@ func TestCountingCaptionNamesFableSessionsOnTheDefaultLogin(t *testing.T) {
 		})
 	}
 }
+
+// The default rotation's ranks (DESIGN A131): 4 and 7 are free, 3 and 11
+// reserved for their Fable room, 8 the Fable store's; a live session on an
+// account's Mythos login ranks it 3, also when the Fable store runs there.
+func TestDefaultPolicyRanksTheReservedAccounts(t *testing.T) {
+	for _, tc := range []struct {
+		mythos string
+		want   map[string]int
+	}{
+		{"", map[string]int{"3": 1, "4": 0, "7": 0, "8": 2, "11": 1}},
+		{"7", map[string]int{"3": 1, "4": 0, "7": 3, "8": 2, "11": 1}},
+		{"8", map[string]int{"3": 1, "4": 0, "7": 0, "8": 3, "11": 1}},
+	} {
+		sessions := map[string]string{"s-opus": "claude-opus-5-5"}
+		if tc.mythos != "" {
+			sessions = map[string]string{"s-mythos": "claude-mythos-5-2"}
+		}
+		s, now := fableIncident(t, sessions, nil, "8", incidentSlots...)
+		if tc.mythos != "" {
+			scope := "mythos/" + store.AccountIdentityDigest("acct"+tc.mythos+"@example.com", "")
+			if _, err := RecordDefaultSessionModel(s.BackupDir(), "s-mythos", "claude-mythos-5-2", scope, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		r := DefaultSessionPolicyResult(s, settings.Default(), now)
+		got := map[string]int{}
+		for _, num := range incidentSlots {
+			got[num] = r.ReservedRank(num)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("Mythos login in use on %q: ranks %v, want %v", tc.mythos, got, tc.want)
+		}
+	}
+}

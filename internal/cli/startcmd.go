@@ -779,7 +779,7 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 	if family == "opus" && account == "" && !snap.CurrentMarked && set.Enabled {
 		pids, err := store.LiveProfilePIDs(view.DefaultProfileDir())
 		snap.IdleOpus = err == nil && !slices.ContainsFunc(pids, func(pid int) bool { return policy.IndependentSessions[pid] == "" })
-		snap.ReservedLast = policy.ReservedLast
+		snap.ReservedRank = policy.ReservedRank
 	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)

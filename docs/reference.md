@@ -2433,7 +2433,12 @@ sessions recorded on the default store, a Fable session among them not
 (DESIGN A108; `tycswap start --check` names it), and always reserves the Fable pool's
 accounts with Fable room and the Fable store's live account, whatever the
 sessions run: the default login fills the accounts whose Fable week is
-spent. An account with Fable room but no Fable login is not reserved. With
+spent. An account with Fable room but no Fable login is not reserved. An
+account whose Mythos login a live session uses is reserved too, and ranks
+last, after the Fable store's account (DESIGN A131): the default login on
+either hands over only to an account of a lower rank below every bar, never
+between two accounts whose Mythos logins are in use, and otherwise reports
+`reserved-no-target` and stays. With
 the Fable store off or unusable, or without Fable logins, the reservation
 above applies unchanged.
 

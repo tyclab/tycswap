@@ -335,8 +335,10 @@ type PolicyResult struct {
 	Reserved       func(num string) bool
 	Unservable     []string
 	Sessions       []string
-	// Accounts serving a dedicated login are last in the default rotation.
-	ReservedLast func(num string) bool
+	// fableLive is the Fable store's live account; mythosBusy the accounts
+	// whose Mythos login a live session uses (ReservedRank).
+	fableLive  string
+	mythosBusy map[string]bool
 	// Serves is the accounts the default login may run on while a live
 	// session runs Mythos and Mythos can be served, the accounts marked for
 	// it; nil serves every account. Mythos is the marked accounts, in
@@ -348,6 +350,22 @@ type PolicyResult struct {
 	FableOnDefault      int
 	OpusOnly            bool
 	IndependentSessions map[int]string
+}
+
+// ReservedRank is an account's rank in the default rotation (DESIGN A131):
+// autoswitch.RankMythos while a live session uses its Mythos login, also when
+// the Fable store runs on it, RankFableStore for the Fable store's live
+// account, RankReserved for any other reserved one, else RankFree.
+func (r PolicyResult) ReservedRank(num string) int {
+	switch {
+	case r.mythosBusy[num]:
+		return autoswitch.RankMythos
+	case num != "" && num == r.fableLive:
+		return autoswitch.RankFableStore
+	case r.Reserved != nil && r.Reserved(num):
+		return autoswitch.RankReserved
+	}
+	return autoswitch.RankFree
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -368,7 +386,7 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // While the Fable store is usable (A102) it follows neither the Fable
 // store's sessions nor a Fable session on the default login (A108), and
 // always reserves the Fable pool's accounts with Fable room and the Fable
-// store's live account, the latter last.
+// store's live account, the latter last (ReservedRank).
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
 	// One read operation; the functions the result keeps ask s itself (DESIGN A116).
 	kept := s
@@ -387,7 +405,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if fable.Usable {
 		live := fable.Live.Slot
 		r.Reserved = fableReserved(s, live, viewOf().fableBelow(base.ModelThreshold))
-		r.ReservedLast = func(num string) bool { return num != "" && num == live }
+		r.fableLive = live
 	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {
@@ -439,8 +457,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 					active[num] = true
 				}
 			}
-			before := r.ReservedLast
-			r.ReservedLast = func(num string) bool { return active[num] || before != nil && before(num) }
+			r.mythosBusy = active
 			reserved := r.Reserved
 			r.Reserved = func(num string) bool { return active[num] || reserved != nil && reserved(num) }
 		}

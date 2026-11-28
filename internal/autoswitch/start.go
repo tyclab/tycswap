@@ -27,7 +27,7 @@ type StartSnapshot struct {
 	Current         string
 	CurrentDisabled bool
 	IdleOpus        bool
-	ReservedLast    func(string) bool
+	ReservedRank    func(string) int
 	CurrentMarked   bool
 	Marked          []string
 	Candidates      []string
@@ -275,9 +275,15 @@ func (s StartSnapshot) hasIdlePreference() bool {
 func (s StartSnapshot) rank(candidates, models []string, now time.Time) []startTarget {
 	order := startOrder{idleOpus: s.IdleOpus, soonestBinding: s.IdleOpus && s.Settings.Strategy == "soonest-reset"}
 	ranked := orderStartTargets(candidates, s.Entries, s.Settings, models, now, order)
-	if s.IdleOpus && s.ReservedLast != nil {
-		ordinary := func(row startTarget) bool { return row.tier != startAtLimit && !s.ReservedLast(row.num) }
-		sort.SliceStable(ranked, func(i, j int) bool { return ordinary(ranked[i]) && !ordinary(ranked[j]) })
+	if s.IdleOpus && s.ReservedRank != nil {
+		// The accounts reserved last follow the others by rank, before the logins at a limit (DESIGN A131).
+		last := func(row startTarget) int {
+			if row.tier == startAtLimit {
+				return RankMythos + 1
+			}
+			return max(s.ReservedRank(row.num), RankReserved)
+		}
+		sort.SliceStable(ranked, func(i, j int) bool { return last(ranked[i]) < last(ranked[j]) })
 	}
 	if len(s.FableAllocationExceptions) > 0 {
 		ordinary := func(row startTarget) bool { return row.tier != startAtLimit && !s.FableAllocationExceptions[row.num] }
