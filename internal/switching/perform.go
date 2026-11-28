@@ -187,7 +187,7 @@ func performSwitchWhen(s *store.Store, targetAccount string, emitOutput, forceAc
 			tx.restoreClear = tx.originalCredentials == ""
 		}
 
-		if live.Source == store.SourceLastInstall && !curEndpoint {
+		if live.Source == store.SourceLastInstall && !curEndpoint && !oauth.TokensWiped(originalCreds) {
 			if err := stashLastInstall(s, originalCreds, currentAccount); err != nil {
 				return cerr.Switch("Could not preserve the live credential before backing it up into Account-%s (safety-copy write failed: %v); nothing was switched", currentAccount, err)
 			}
@@ -489,6 +489,21 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			printWarning(msg)
 		} else {
 			*warningsOut = append(*warningsOut, msg)
+		}
+	case "wiped":
+		if err := writeOutgoingConfig(); err != nil {
+			return err
+		}
+		msg := "The live login carries no tokens (Claude Code clears them when a refresh is rejected); " +
+			"Account-" + currentAccount + "'s stored login was kept. If it cannot authenticate either, " +
+			"sign in to it again with: tycswap add --login --slot " + currentAccount
+		if emitOutput {
+			printWarning(msg)
+		} else {
+			*warningsOut = append(*warningsOut, msg)
+		}
+		if s.Log != nil {
+			s.Log.Warningf("Backed up account %s's config only: the live login carries no tokens, its stored login was kept", currentAccount)
 		}
 	case "unresolved":
 		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {

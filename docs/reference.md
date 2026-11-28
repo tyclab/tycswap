@@ -622,7 +622,12 @@ behind it there is no live credential, and a switch away stops with
 overwrite its backup` instead of storing the file as the outgoing account's
 credential. An account with a base URL is the exception: no credential is its
 normal state, its stored key is its credential, and the switch away backs up
-its config only. A rollback restores the exact pre-switch credential (an API key
+its config only. A live login whose tokens Claude Code cleared after a
+rejected refresh (its `claudeAiOauth` has neither an access nor a refresh
+token) is never stored: the switch away backs up the config only, keeps the
+account's stored login and warns `The live login carries no tokens (…);
+Account-<n>'s stored login was kept.`; `add` refuses it and asks for a new
+sign-in, and `import` refuses an entry holding one (DESIGN A130). A rollback restores the exact pre-switch credential (an API key
 with the seat-wide keys left beside it).
 
 A switch that moves the live account is a switch by hand: it leaves

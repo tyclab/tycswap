@@ -10976,3 +10976,46 @@ recovered Fable start exits 1 without launching. The active login's usage
 fetch with no Claude Code running refreshes before it takes the lock and
 discards the successor when the lock stays busy for 10 s; that path is
 unchanged here.
+
+## A130. A login whose tokens Claude Code wiped never replaces a stored login
+
+**Why.** When the server rejects a refresh, Claude Code empties
+`accessToken` and `refreshToken` in place and keeps the credential. Such a
+login has no token to resolve its identity with, so a switch away classified
+it `unresolved` and its fail-open backup replaced the outgoing slot's stored
+login (the previous one stays in `.prev`); a switch back then installed the
+wiped login, and the account needed a new sign-in although its stored login
+may still have worked. `add` of the live login stored it as well.
+
+**The rule.** `oauth.TokensWiped` is the one predicate: a JSON object that
+carries neither an access nor a refresh token under `claudeAiOauth`, the
+object absent included. Not wiped: a blank access token with a refresh
+token, a refresh token alone, a setup token (access token only), a raw API
+key. Where a live login would be written into a slot it is checked:
+
+- The switch's ownership oracle returns `wiped` after `own-bytes` and
+  `own-family` (an identical backup is wiped already). The switch backs up
+  the outgoing config only, as for `own-bytes`, keeps the stored login, and
+  warns; a wiped login the last install attributes is not stashed first
+  either `The live login carries no tokens (…); Account-N's stored login was
+  kept.` A group or legacy release that meets `wiped` holds the login as it
+  held `unresolved` before.
+- `add` of the live login refuses it with a validation error that asks for a
+  new sign-in (`tycswap add --login`).
+- The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
+  the last install's account) is not written into the Fable login; a warning
+  is logged.
+- Parking the default login (`parkDefaultLogin`) keeps the stored login and
+  logs a warning.
+- `import` refuses an entry whose credential is wiped: an export taken of a
+  wiped live login would otherwise overwrite the slot on the importing side.
+
+The harvest of a rotated live login (`harvestLiveCredential`,
+`HarvestFableLive`) and the `own-rotated` branch cannot reach a wiped login:
+they need the chain record or a profile answer, and both need an access
+token. A `--login` sign-in is checked by `CheckLogin`; renumbering and
+rollback move stored logins only.
+
+**Limits.** A login with only one of its two tokens left is not wiped and is
+handled as before. A live JSON object with no `claudeAiOauth` at all counts
+as wiped, so `add` refuses it.

@@ -36,6 +36,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -293,6 +294,9 @@ func readActiveCredential(s *store.Store) (string, error) {
 func rejectLiveAPIKeyCapture(creds string) error {
 	if credstore.LooksLikeAPIKey(creds) {
 		return cerr.Validation("Active login is an API-key account. Add it with 'tycswap --add-token sk-ant-api...' instead of --add-account.")
+	}
+	if oauth.TokensWiped(creds) {
+		return cerr.Validation("The live login carries no tokens (Claude Code clears them when a refresh is rejected); sign in again first: tycswap add --login")
 	}
 	return nil
 }
