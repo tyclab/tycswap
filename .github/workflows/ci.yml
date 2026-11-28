@@ -49,6 +49,15 @@ jobs:
       # The Makefile targets, so CI and a developer's machine run the same commands.
       - name: CHANGELOG.md check against the base, and what the merge releases (DESIGN A121)
         run: make release-check RELEASE_BASE=HEAD^1
+      # Two jobs that run `releasectl publish` at once split a release in two;
+      # one shared concurrency group keeps them apart (DESIGN A121).
+      - name: Every release.yml job that publishes shares one concurrency group
+        run: |
+          yq -e '[.jobs[] | select([.steps[].run // "" | test("releasectl publish")] | any)]
+            | [length > 1, (map(.concurrency.group) | unique | length) == 1,
+               all_c(.concurrency.group != null and .concurrency["cancel-in-progress"] == false)] | all' \
+            .github/workflows/release.yml ||
+            { echo "::error::the jobs of release.yml that run releasectl publish must declare the same concurrency.group and cancel-in-progress: false"; exit 1; }
       - run: make fmt
       - run: make vet
       - run: make test

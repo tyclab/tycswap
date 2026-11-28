@@ -10672,7 +10672,10 @@ no-runner signature: the Retry workflow reruns it, and the rerun finds the
 release. `ensure`'s clean-up stays as the second line of defence; it cannot
 be relied on alone, because GitHub's release list can lag a create
 (`TestTwoRunsCreatingTheReleaseSplitWhenTheListLags` shows the split when
-the list after the create shows only the run's own draft).
+the list after the create shows only the run's own draft). That test cannot
+see the workflow, so CI's `test` job checks it with `yq`: it fails unless
+every `release.yml` job that runs `releasectl publish`, at least two, declares
+the same `concurrency.group` and `cancel-in-progress: false`.
 
 **Holding a release back** is not in the normal path, and nothing needs it:
 a change that must not ship is reverted by the next pull request, whose
