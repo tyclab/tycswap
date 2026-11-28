@@ -334,6 +334,19 @@ need a Fable sign-in (DESIGN A115): `Account-7 needs a Fable sign-in: tycswap
 fable --login`, or `Accounts 7, 11 and 12 need a Fable sign-in: tycswap fable
 --login`. Never both lines.
 
+On Linux and WSL, while auto-switch is on, a start login carries the Mythos
+mark or holds a Mythos login directory, and no start login has a ready Mythos
+login, `status` and `list` end their Fable and Mythos lines with the warning
+`No start login has a Mythos login of its own, so tycswap start switches or
+holds the default login or the Fable store for every session on it. Give
+Account-<n> one with <commands>.` in the same colour. The commands are those
+the start login that needs the fewest is missing, in this order: `tycswap
+enable <n>`, `tycswap mythos --allow <n>`, `tycswap add --login --lineage
+mythos --slot <n>`. Their `--json` carry it as the top-level string
+`ownStartLoginWarning`, and the dashboard's state carries the same field,
+each present only while the warning holds; the dashboard shows it above the
+accounts (DESIGN A126).
+
 ### Files
 
 Reads `sequence.json`, the live `~/.claude.json` (or a custom `CLAUDE_CONFIG_DIR`
@@ -1736,7 +1749,14 @@ the `Fable store: ` prefix as the reason). `start` switches and holds
 nothing there and asks no allocation question; the SessionStart hook places
 the session on the default login, the Fable store or a Mythos login by its
 model. With no such login ready the selection runs as described above
-(DESIGN A125).
+(DESIGN A125). When a start login carries the Mythos mark or holds a Mythos
+login directory, the selection is preceded by `tycswap start: <reason>; no
+start login has a Mythos login of its own, so this start switches the default
+login for every session on it. Give Account-<n> one with <commands>.` (the
+commands of the warning in `tycswap status`), with `holds` for a start
+login at its limit, `the Fable store` and the `Fable store: ` reason on the
+Fable store, and goes to `tycswap.log` as `start: <line>`; the selection's own
+line (`Switched to start login Account-<n>.`) follows (DESIGN A126).
 
 Before that selection, a Fable session without `--account`, fresh or a resume
 whose saved link names the Fable store, follows the Fable placement rule

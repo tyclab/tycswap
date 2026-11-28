@@ -10919,6 +10919,68 @@ move is deferred, that session's requests go out on the own login's account
 until its status line or the tick moves it; no other session is affected.
 Sessions on Windows and macOS have no link.
 
+## A126. A start that moves a shared login for want of an own login says so
+
+**Why.** A125 protects a shared login only while a start login has a ready
+Mythos login. When that login is lost (signed out, its account disabled, its
+Mythos mark removed), `ownStartLogin` finds none and the start selects as
+before A125: it switches the default login or the Fable store to a start
+login, one at its limit included, or holds it, and every session on it runs
+on that account. Nothing said so, and on a box with one such login a single
+lost sign-in brought the old behaviour back unnoticed.
+
+**The rule.** A start login is enrolled while it carries the Mythos mark or
+holds a Mythos login directory: the protection was there, and its own commands
+give it back. `store.OwnStartLogins` is the one rule for both facts, the ready
+own logins and the enrolled start logins, each in sequence order;
+`ownStartLogin` ranks the ready ones as A125 does, and the warning below reads
+the same function. `reporting.OwnStartLoginHint` names, for the enrolled start
+login that needs the fewest, the commands it is missing, in this order:
+`tycswap enable <n>` while it is disabled, `tycswap mythos --allow <n>`
+without the Mythos mark (`add --login --lineage mythos` asks for the mark),
+`tycswap add --login --lineage mythos --slot <n>` while its Mythos login is
+not signed in: `Give Account-<n> one with <commands>.`
+
+- **At the start.** Where A125 would have come up on an own login (a link of
+  its own, no `--account`, marks set, auto-switch on, a selection that would
+  switch or hold) and finds none ready while a start login is enrolled, start
+  says, before its selection, `<why>; no start login has a Mythos login of its
+  own, so this start switches the default login for every session on it.
+  Give Account-<n> one with <commands>.` (`holds` for a
+  current start login at its limit; `the Fable store` with A122's
+  `Fable store: ` reason on the Fable store), to stderr and `tycswap.log`
+  through `reportStartSelection`. The selection then runs and reports as
+  before; a hold says nothing of its own, a switch names its target
+  (`Switched to start login Account-N.`), so the two lines do not repeat.
+- **Standing warning.** `reporting.OwnStartLoginWarning` holds while start
+  links exist on this platform (`reporting.SessionLinksSupported`, the
+  platform half of the condition `runStart` creates links by, which
+  `CreateSessionLink` uses too), auto-switch is on, a start login is enrolled
+  and none has a ready Mythos login. `status` and `list` print it in yellow
+  after their Fable and Mythos lines; `status --json`, `list --json` and the
+  dashboard's state carry it as `ownStartLoginWarning`, present only while it
+  holds, and the dashboard shows it as a notice above the accounts, beside
+  A115's Fable sign-in notice. It is evaluated where the state is built, so a
+  page drawing a WSL box's state shows that box's answer.
+
+A box whose start logins never had a Mythos mark or login is not nagged, as
+A115 ruled for the Fable sign-in: its only remedy would be a Mythos mark,
+which declares that the account runs Mythos. Which login a start takes is
+unchanged.
+
+**Limits.** The tray draws no line for the field.
+
+**Tests.** `cli` (Linux): `TestStartWithoutAnOwnLoginSaysItMovesTheSharedLogin`
+(disabled, signed out and unmarked for Mythos, each with its command, on the
+default login and the Fable store, and a hold), `TestStartThatTakesNoOwnLogin`
+(an own login of no start login says nothing). `reporting`:
+`TestStatusAndListWarnWithoutAnOwnStartLogin` (status and list, text and JSON:
+present with an enrolled start login and no ready one on Linux, naming the
+sign-in, or the Mythos mark once it was removed; absent with a ready one,
+without marks, with auto-switch off, and without a Mythos mark or login).
+`web`: the `signin` harness of `TestAppJSFableSignIn` shows and hides the
+dashboard notice.
+
 ## A127. The account-mismatch line is logged at DEBUG
 
 **Why.** A68's line `live config names slot X (…) but the live credential is

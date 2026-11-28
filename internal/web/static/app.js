@@ -808,8 +808,12 @@
     var signIn = fableSignIn(st);
     $('fable-signin').hidden = !signIn;
     $('fable-signin-text').textContent = signIn ? signIn.text : '';
+    // The server's warning while no start login has a login of its own (A126).
+    var own = st.ownStartLoginWarning || '';
+    $('own-start-login').hidden = !own;
+    $('own-start-login').textContent = own;
     // An empty wrapper would still take a grid gap at the top of the panel.
-    $('onboard').hidden = !any && !signIn;
+    $('onboard').hidden = !any && !signIn && !own;
   }
 
   // ---- updates (DESIGN A27) ---------------------------------------------------

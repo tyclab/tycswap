@@ -79,6 +79,9 @@ type AccountsSnapshot struct {
 	// account has a Fable login (DESIGN A104).
 	Fable  map[string]any
 	Mythos map[string]any
+	// OwnStartLoginWarning is OwnStartLoginWarning's text, "" without one
+	// (DESIGN A126).
+	OwnStartLoginWarning string
 }
 
 func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Provider) }
@@ -139,7 +142,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		})
 	}
 	snap := &AccountsSnapshot{
-		ActiveNumber: activeNumber, Mythos: mythos.object,
+		ActiveNumber: activeNumber, Mythos: mythos.object, OwnStartLoginWarning: OwnStartLoginWarning(s, data),
 		Accounts: accounts,
 		TakenAt:  clock.Seconds(s.Clk),
 		Provider: ProviderClaude,

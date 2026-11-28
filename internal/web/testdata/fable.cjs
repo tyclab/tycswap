@@ -161,7 +161,7 @@ if (process.argv[3] === 'editor') {
   // The accounts that need a Fable sign-in (DESIGN A115), from
   // fable.withoutLogin: the header chip, the notice and the row chip.
   for (const id of ['onboard', 'auth-overrides', 'auth-overrides-env', 'auth-overrides-env-keys', 'auth-overrides-settings', 'auth-overrides-settings-keys',
-    'auth-overrides-path', 'fable-signin', 'fable-signin-text']) { ids[id] = new Node('div'); }
+    'auth-overrides-path', 'fable-signin', 'fable-signin-text', 'own-start-login']) { ids[id] = new Node('div'); }
   block('  // ---- onboarding (DESIGN A27)', '  // ---- updates (DESIGN A27)');
   const withSet = (...nums) => { const st = fableState(); st.fable.withoutLogin = nums; return st; };
   const headerChip = () => ids['hdr-acct'].all().filter(e => e.className.startsWith('chip') && /Fable sign-in/.test(text(e)));
@@ -188,6 +188,15 @@ if (process.argv[3] === 'editor') {
   assert.equal(ids.onboard.hidden, true);
   ctx.renderOnboarding(plainState());
   assert.equal(ids['fable-signin'].hidden, true);
+  // The server's warning while no start login has a login of its own (A126).
+  const own = plainState(); own.ownStartLoginWarning = 'No start login has a Mythos login of its own.';
+  ctx.renderOnboarding(own);
+  assert.equal(ids['own-start-login'].hidden, false);
+  assert.equal(text(ids['own-start-login']), own.ownStartLoginWarning);
+  assert.equal(ids.onboard.hidden, false);
+  ctx.renderOnboarding(plainState());
+  assert.equal(ids['own-start-login'].hidden, true);
+  assert.equal(ids.onboard.hidden, true);
 
   // 5 has no Fable login, 4's reads sign in again, 1 has none and is not in the set.
   render(withSet(4, 5));
