@@ -44,7 +44,7 @@ type Engine struct {
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
 	reserved     func(num string) bool
-	reservedLast func(num string) bool
+	reservedRank func(num string) int
 	opusOnly     func() bool
 	holdToken    string
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
@@ -83,9 +83,17 @@ func WithReserved(reserved func(num string) bool) Option {
 	return func(e *Engine) { e.reserved = reserved }
 }
 
-// WithReservedLast names the reserved account taken last, left for any other below every bar (A102).
-func WithReservedLast(last func(num string) bool) Option {
-	return func(e *Engine) { e.reservedLast = last }
+// Ranks in the default rotation; a reserved hand-over goes to a lower one (DESIGN A131).
+const (
+	RankFree = iota
+	RankReserved
+	RankFableStore // the Fable store runs on it
+	RankMythos     // a live session uses its Mythos login
+)
+
+// WithReservedRank ranks the accounts; without it a reserved one is RankReserved (A131).
+func WithReservedRank(rank func(num string) int) Option {
+	return func(e *Engine) { e.reservedRank = rank }
 }
 
 // WithUnservable names the derived models no usable account can serve; the
@@ -194,8 +202,14 @@ func (e *Engine) isReserved(num string) bool { return e.reserved != nil && e.res
 
 func (e *Engine) servesAccount(num string) bool { return e.serves == nil || e.serves(num) }
 
-func (e *Engine) isReservedLast(num string) bool {
-	return e.isReserved(num) && e.reservedLast != nil && e.reservedLast(num)
+func (e *Engine) rank(num string) int {
+	switch {
+	case e.reservedRank != nil:
+		return e.reservedRank(num)
+	case e.isReserved(num):
+		return RankReserved
+	}
+	return RankFree
 }
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).

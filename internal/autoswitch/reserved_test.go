@@ -117,8 +117,16 @@ func TestNothingReservedKeepsBelowThreshold(t *testing.T) {
 
 // lastOption names the reserved account the engine takes last: the Fable
 // store's live account beside a usable Fable store (DESIGN A102).
-func lastOption(num string) Option {
-	return WithReservedLast(func(n string) bool { return n == num })
+func lastOption(f *fakeSwitcher, num string) Option {
+	return WithReservedRank(func(n string) int {
+		switch {
+		case n == num:
+			return RankFableStore
+		case f.reserved[n]:
+			return RankReserved
+		}
+		return RankFree
+	})
 }
 
 // Among reserved targets the one reserved last ranks after the others, under
@@ -133,7 +141,7 @@ func TestReservedLastRanksAfterTheOtherReserved(t *testing.T) {
 			s := settings.Default()
 			s.Strategy = strategy
 			rec := &recorder{}
-			e := build(t, f, s, rec, clk, false, reservedOption(f), lastOption("2"))
+			e := build(t, f, s, rec, clk, false, reservedOption(f), lastOption(f, "2"))
 			if got := e.Tick(); got != Switched || deref(f.current) != "3" {
 				t.Fatalf("outcome = %v, current = %q, want a switch to 3 (kinds=%v)", got, deref(f.current), rec.kinds())
 			}
@@ -151,7 +159,7 @@ func TestReservedLastActiveHandsOverToAReservedAccount(t *testing.T) {
 	f.reserved["1"], f.reserved["2"] = true, true
 	f.creds["1"] = farFutureCreds(clk, "r1")
 	rec := &recorder{}
-	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption("1"))
+	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption(f, "1"))
 	if got := e.Tick(); got != Switched || deref(f.current) != "2" {
 		t.Fatalf("outcome = %v, current = %q, want a switch to 2 (kinds=%v)", got, deref(f.current), rec.kinds())
 	}
@@ -174,12 +182,88 @@ func TestReservedLastActiveStaysWithoutATarget(t *testing.T) {
 	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(90, 10)), dictEntry(usageOf(10, 98)))
 	f.reserved["1"], f.reserved["2"] = true, true
 	rec := &recorder{}
-	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption("1"))
+	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption(f, "1"))
 	if got := e.Tick(); got != NoAction || deref(f.current) != "1" {
 		t.Fatalf("outcome = %v, current %q", got, deref(f.current))
 	}
 	ns, _ := rec.last("no-switch").(NoSwitchEvent)
-	if ns.Reason != "reserved-no-target" || ns.Detail != "the Fable store runs on the active account; no other account is below every bar" {
+	if ns.Reason != "reserved-no-target" || ns.Detail != "the Fable store runs on the active account; no other account is below every bar unless its Mythos login is in use" {
 		t.Fatalf("no-switch = %+v", ns)
+	}
+}
+
+// rankOptions ranks the fake's accounts in the default rotation (DESIGN
+// A131) and reserves every account of rank 1 or more.
+func rankOptions(f *fakeSwitcher, ranks map[string]int) []Option {
+	for num, rank := range ranks {
+		f.reserved[num] = rank > 0
+	}
+	return []Option{reservedOption(f), WithReservedRank(func(n string) int { return ranks[n] })}
+}
+
+// Two accounts below every bar, the Fable store's (rank 2) and one whose
+// Mythos login is in use (rank 3), every other at a limit: the default login
+// rests on the Fable store's account and does not cycle (DESIGN A131).
+func TestReservedHandOverGoesToALowerRankOnly(t *testing.T) {
+	clk := newClk()
+	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 30)), dictEntry(usageOf(10, 100)))
+	f.creds["1"] = farFutureCreds(clk, "r1")
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, rankOptions(f, map[string]int{"1": 2, "2": 3})...)
+	if got := e.Tick(); got != NoAction || deref(f.current) != "1" {
+		t.Fatalf("on the Fable store's account: outcome = %v, current %q, want it kept (kinds=%v)", got, deref(f.current), rec.kinds())
+	}
+	ns, _ := rec.last("no-switch").(NoSwitchEvent)
+	if ns.Reason != "reserved-no-target" || ns.Detail != "the Fable store runs on the active account; no other account is below every bar unless its Mythos login is in use" {
+		t.Fatalf("no-switch = %+v", ns)
+	}
+	f.current = strp("2")
+	if got := e.Tick(); got != Switched || deref(f.current) != "1" {
+		t.Fatalf("on the busy Mythos login's account: outcome = %v, current %q, want a switch to 1 (kinds=%v)", got, deref(f.current), rec.kinds())
+	}
+	if sw, ok := rec.last("switch").(SwitchEvent); !ok || sw.Trigger != "reserved" {
+		t.Fatalf("switch event = %#v, want trigger reserved", rec.last("switch"))
+	}
+	clk.Advance(time.Hour)
+	if got := e.Tick(); got != NoAction || reasonOf(t, rec.last("no-switch")) != "reserved-no-target" || deref(f.current) != "1" {
+		t.Fatalf("after the cooldown: outcome = %v, reason = %q, current %q", got, reasonOf(t, rec.last("no-switch")), deref(f.current))
+	}
+}
+
+// Two accounts whose Mythos logins are in use hand the default login to
+// neither: the same rank is no better place (DESIGN A131).
+func TestReservedHandOverNeverBetweenTheSameRank(t *testing.T) {
+	clk := newClk()
+	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 30)), dictEntry(usageOf(10, 100)))
+	f.creds["1"] = farFutureCreds(clk, "r1")
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, rankOptions(f, map[string]int{"1": 3, "2": 3})...)
+	for _, from := range []string{"1", "2"} {
+		f.current = strp(from)
+		if got := e.Tick(); got != NoAction || deref(f.current) != from {
+			t.Fatalf("on %s: outcome = %v, current %q, want it kept (kinds=%v)", from, got, deref(f.current), rec.kinds())
+		}
+		ns, _ := rec.last("no-switch").(NoSwitchEvent)
+		if ns.Reason != "reserved-no-target" || ns.Detail != "the active account's Mythos login is in use; no other account is below every bar unless its Mythos login is in use too" {
+			t.Fatalf("on %s: no-switch = %+v", from, ns)
+		}
+	}
+}
+
+// As a target the account whose Mythos login is in use ranks after the Fable
+// store's, under both strategies, whatever its room (DESIGN A131).
+func TestReservedMythosRanksAfterTheFableStore(t *testing.T) {
+	for _, strategy := range []string{"soonest-reset", "best"} {
+		t.Run(strategy, func(t *testing.T) {
+			clk := newClk()
+			f := threeAccounts(clk, dictEntry(usageOf(10, 100)), dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 20)))
+			s := settings.Default()
+			s.Strategy = strategy
+			rec := &recorder{}
+			e := build(t, f, s, rec, clk, false, rankOptions(f, map[string]int{"2": 3, "3": 2})...)
+			if got := e.Tick(); got != Switched || deref(f.current) != "3" {
+				t.Fatalf("outcome = %v, current = %q, want a switch to 3 (kinds=%v)", got, deref(f.current), rec.kinds())
+			}
+		})
 	}
 }

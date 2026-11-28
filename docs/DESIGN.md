@@ -8401,20 +8401,22 @@ room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
 live account, whatever its room and whatever runs: they rank last (A71) and
 an active one hands over under the cooldown (A77). Among them the Fable
 store's live account ranks last as a target of the default tick
-(`PolicyResult.ReservedLast`, `autoswitch.WithReservedLast`), and a default
-login on it hands over, under the same cooldown, to any other account below
-every bar, reserved or not; from a reserved account that is not the Fable
+(`PolicyResult.ReservedRank`, `autoswitch.WithReservedRank`, A131), and a
+default login on it hands over, under the same cooldown, to another account
+below every bar, reserved or not, unless that account's Mythos login is in
+use (A131); from a reserved account that is not the Fable
 store's the hand-over still takes an unreserved one only, so it does not
 come back (2026-11-19: before, the default tick took the Fable store's
 account as readily as another reserved one and then stayed there with
 `reserved-no-target`, and Opus sessions burned the windows the Fable
 sessions ran on while another account was free). With no such account it
 stays and says `the Fable store runs on the active account; no other
-account is below every bar`. An account with Fable room but no Fable login
-is the default store's. Off, unusable or without Fable logins, the policy is
-A91's. The dashboard's counting and ranking, `start`'s ranking and `switch
---strategy` read the same result, but for `ReservedLast`, which orders the
-default tick only.
+account is below every bar unless its Mythos login is in use`. An account
+with Fable room but no Fable login is the default store's. Off, unusable or
+without Fable logins, the policy is A91's. The dashboard's counting and
+ranking, `start`'s ranking and `switch --strategy` read the same result, but
+for `ReservedRank`, which orders the default tick and an idle Opus start
+only.
 
 **The status-line record.** `--observe` records `"store":"fable"` for a
 session whose process runs under the Fable store (`cli.fableSessionProcess`,
@@ -9398,8 +9400,11 @@ An automatic move can choose only a login allocated to every known premium
 model it will serve. A local allocation exception applies to the individual
 launch which requested it. With soonest-reset ordering, an Opus-only workload
 below its thresholds can move to an eligible login whose binding window resets
-strictly earlier. Unknown or equal resets leave it in place. An account serving
-an independent session is reserved. Before committing, the engine rechecks the
+strictly earlier. Unknown or equal resets leave it in place. An account whose
+Mythos login a live session uses is reserved and ranks last in the default
+rotation, after the Fable store's live account; a default login on it hands
+over only to an account whose Mythos login is not in use (A131). Before
+committing, the engine rechecks the
 source and target under the switch lock. A drain also rechecks the workload.
 
 ## A109. Session links for native Claude on Linux and WSL
@@ -11168,3 +11173,52 @@ stored logins only.
 **Limits.** A login with only one of its two tokens left is not wiped and is
 handled as before. A live JSON object with no `claudeAiOauth` at all counts
 as wiped, so `add` refuses it.
+
+## A131. A reserved hand-over goes only to a lower rank
+
+**Why.** A102 let a default login on the account reserved last hand over to
+any other account below every bar, and the policy made two kinds of account
+last: the Fable store's live account, and every account whose Mythos login a
+live session uses (A108's startup allocation). With two such accounts below
+every bar and every other at a limit or disabled, and no live session on the
+default login, each was a target from the other: the `reserved` trigger
+moved the default login from one to the other and back once per cooldown,
+four switches in 18 minutes, from the tick or from a status line's
+observation. Nothing was gained by either move, and each one moved a shared
+login. While a session ran on the default login an allocation could hide
+one of the two and the tick said `reserved-no-target`; the cycle began once
+that session ended.
+
+**The rule.** Every account has a rank in the default rotation,
+`PolicyResult.ReservedRank`, the one place that decides it:
+
+| Rank | Account |
+|---|---|
+| 0 `RankFree` | not reserved |
+| 1 `RankReserved` | reserved (A71, A77, A91, A102) |
+| 2 `RankFableStore` | the Fable store's live account (A102) |
+| 3 `RankMythos` | a live session uses its Mythos login, also when the Fable store runs on it |
+
+The engine takes it through `autoswitch.WithReservedRank`; without the
+option a reserved account is rank 1 and any other rank 0. A `reserved`
+hand-over goes only to an account below every bar of a strictly lower rank:
+from rank 1 to rank 0 as before, from rank 2 to rank 0 or 1, from rank 3 to
+rank 0, 1 or 2, never between two accounts of the same rank. With no target
+the tick says `reserved-no-target`, rank 2 with `the Fable store runs on the
+active account; no other account is below every bar unless its Mythos login
+is in use`, rank 3 with `the active account's Mythos login is in use; no
+other account is below every bar unless its Mythos login is in use too`.
+Within a bar tier a target of a higher rank sorts after one of a lower rank
+under both strategies, and an idle Opus start (A105) takes a rank 3 account
+after a rank 2 one, both after the others and before the logins at a limit.
+No other trigger changes.
+
+**Why 3 after 2.** Mythos room is the scarcest a box has, and the account
+whose Mythos login runs sessions is the one that needs it; the Fable
+store's account is the better place for the default login to rest.
+
+**Limits.** With no session on the default login the policy follows no
+family, so an account whose explicit model list names only Mythos stays a
+target of the `at-limit` and `proactive` triggers; it ranks last there
+too. `RankTargets` (a switch by hand, the dashboard's best candidate) ranks
+by reservation alone, as before.

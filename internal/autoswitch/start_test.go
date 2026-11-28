@@ -396,3 +396,25 @@ func TestStartCooldownAndEngineCoordination(t *testing.T) {
 		})
 	}
 }
+
+// startRanks gives an idle Opus start the default rotation's ranks (DESIGN A131).
+func startRanks(snap *StartSnapshot, ranks map[string]int) {
+	snap.ReservedRank = func(n string) int { return ranks[n] }
+}
+
+// An idle Opus start takes an unreserved login first, then the Fable store's
+// account, and the account whose Mythos login is in use last, whatever their
+// room (DESIGN A131).
+func TestIdleOpusStartRanksABusyMythosLoginAfterTheFableStore(t *testing.T) {
+	snap := StartSnapshot{IdleOpus: true, Settings: settings.Default(), Entries: map[string]usage.UsageEntry{
+		"2": dictEntry(usageOf(10, 10)), "3": dictEntry(usageOf(10, 20)), "4": dictEntry(usageOf(10, 30)),
+	}}
+	startRanks(&snap, map[string]int{"2": 3, "3": 2})
+	var got []string
+	for _, row := range snap.rank([]string{"2", "3", "4"}, nil, baseTime) {
+		got = append(got, row.num)
+	}
+	if want := []string{"4", "3", "2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("start order = %v, want %v", got, want)
+	}
+}

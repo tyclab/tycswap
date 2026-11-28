@@ -232,8 +232,11 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	if isHandover(trigger) && (blk != nil || len(ordered) == 0) {
 		// Nothing to hand over to: the account stays (DESIGN A71, A73).
 		detail := "the active account can run Fable; no account without Fable is below every bar"
-		if e.isReservedLast(cur) {
-			detail = "the Fable store runs on the active account; no other account is below every bar"
+		switch e.rank(cur) {
+		case RankFableStore:
+			detail = "the Fable store runs on the active account; no other account is below every bar unless its Mythos login is in use"
+		case RankMythos:
+			detail = "the active account's Mythos login is in use; no other account is below every bar unless its Mythos login is in use too"
 		}
 		if trigger == "model-missing" {
 			detail = "the active account reports no " + strings.Join(requiredModels(e.models), ", ") +
@@ -463,18 +466,16 @@ func (e *Engine) selectCandidates(
 		if headroom[num] != nil {
 			anyKnown = true
 		}
-		q, cand, ok := targetQual(num, usageMap[num], e.models, required, s, e.isReserved(num))
+		q, cand, ok := targetQual(num, usageMap[num], e.models, required, s, e.rank(num))
 		if !ok {
 			continue
 		}
-		q.last = e.isReservedLast(num)
 		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, q.below, s) {
 			continue
 		}
-		// A hand-over leaves a Fable-capable account only for one that is
-		// not, and only when that one is below every bar (DESIGN A71); off
-		// the account reserved last, for any other below every bar (A102).
-		if trigger == "reserved" && (!q.below || q.reserved && !e.isReservedLast(cur)) || trigger == "model-missing" && !q.below {
+		// A hand-over goes only to an account below every bar (DESIGN A71)
+		// of a strictly lower rank (A131).
+		if trigger == "reserved" && (!q.below || q.rank >= e.rank(cur)) || trigger == "model-missing" && !q.below {
 			continue
 		}
 		qualifying = append(qualifying, q)
@@ -510,7 +511,7 @@ func (e *Engine) incompatibleDetail(required []string, modelRejected, servesReje
 // nor out of its weekly budget (the week or a counted model window). The
 // engine, a switch by hand and the dashboard's best candidate rank on it
 // (DESIGN A99).
-func targetQual(num string, value any, models, required []string, s settings.AutoSwitchSettings, reserved bool) (qual, usage.Headroom, bool) {
+func targetQual(num string, value any, models, required []string, s settings.AutoSwitchSettings, rank int) (qual, usage.Headroom, bool) {
 	if !hasRequiredModels(value, required) {
 		return qual{}, usage.Headroom{}, false
 	}
@@ -522,7 +523,7 @@ func targetQual(num string, value any, models, required []string, s settings.Aut
 	if cand.WeeklyExhausted() {
 		return qual{}, usage.Headroom{}, false
 	}
-	return qual{h: *h, weekly: cand.Weekly(), below: belowEveryBar(cand, s), reserved: reserved,
+	return qual{h: *h, weekly: cand.Weekly(), below: belowEveryBar(cand, s), rank: rank,
 		renewal: renewalTS(usageDict(value), models), num: num}, cand, true
 }
 
@@ -538,7 +539,11 @@ func RankTargets(candidates []string, values map[string]any, s settings.AutoSwit
 		if m, ok := v.(map[string]any); ok {
 			v = oauth.AsOf(m, now)
 		}
-		if q, _, ok := targetQual(num, v, models, required, s, reserved != nil && reserved(num)); ok {
+		rank := RankFree
+		if reserved != nil && reserved(num) {
+			rank = RankReserved
+		}
+		if q, _, ok := targetQual(num, v, models, required, s, rank); ok {
 			qualifying = append(qualifying, q)
 		}
 	}
@@ -647,13 +652,11 @@ type qual struct {
 	// below records whether every known axis sits under its own bar, which is
 	// what "below threshold" means once there is one per window (DESIGN A34).
 	below bool
-	// reserved marks an account this profile leaves to Fable work; it sorts
-	// after every unreserved account of its tier (DESIGN A71), and with last
-	// after the other reserved ones (A102).
-	reserved bool
-	last     bool
-	renewal  *float64
-	num      string
+	// rank is the account's rank in the default rotation: within its tier a
+	// higher rank sorts after a lower one (DESIGN A71, A102, A131).
+	rank    int
+	renewal *float64
+	num     string
 }
 
 // sortQualifying orders the qualifying targets per autoswitch.strategy.
@@ -680,11 +683,8 @@ func sortQualifying(qualifying []qual, strategy string) {
 			if a.below != b.below {
 				return a.below // tier A (below every bar) before tier B
 			}
-			if a.reserved != b.reserved {
-				return !a.reserved // unreserved before reserved, within the tier
-			}
-			if a.last != b.last {
-				return !a.last
+			if a.rank != b.rank {
+				return a.rank < b.rank // unreserved before reserved, within the tier
 			}
 			if !a.below {
 				return a.h > b.h // tier B: most headroom first (best-like last resort)
@@ -706,11 +706,8 @@ func sortQualifying(qualifying []qual, strategy string) {
 	// figure.
 	sort.SliceStable(qualifying, func(i, j int) bool {
 		a, b := qualifying[i], qualifying[j]
-		if a.reserved != b.reserved {
-			return !a.reserved
-		}
-		if a.last != b.last {
-			return !a.last
+		if a.rank != b.rank {
+			return a.rank < b.rank
 		}
 		if a.weekly != nil && b.weekly != nil && *a.weekly != *b.weekly {
 			return *a.weekly > *b.weekly
