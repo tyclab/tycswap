@@ -99,27 +99,34 @@ func (sw *Switcher) EmptyFable(jsonOut bool) (map[string]any, error) {
 
 // EmptyFableBy is EmptyFable with the log line's actor ("" writes none).
 func (sw *Switcher) EmptyFableBy(jsonOut bool, actor string) (map[string]any, error) {
+	result, err := sw.EmptyFableWithin(nil)
+	if err == nil && result["switched"] == true && sw.Log != nil && actor != "" {
+		sw.Log.Action("Emptied the Fable store", actor)
+	}
+	return result, err
+}
+
+// EmptyFableWithin is EmptyFable around fn (switching.EmptyFableWithin),
+// under the Fable state lock.
+func (sw *Switcher) EmptyFableWithin(fn func(empty func() error) error) (map[string]any, error) {
 	f, err := sw.Store.ForFable()
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Stat(paths.FableScopeDir(f.BackupDir())); os.IsNotExist(err) {
-		return switching.EmptyFable(f)
+		return switching.EmptyFableWithin(f, fn)
 	} else if err != nil {
 		return nil, err
 	}
 	var result map[string]any
 	err = autoswitch.HandSwitch(f.StatePath(), sw.Clk, nil, func() (string, error) {
 		var err error
-		result, err = switching.EmptyFable(f)
+		result, err = switching.EmptyFableWithin(f, fn)
 		if err == nil {
 			err = f.SetFableAllocationParked(false)
 		}
 		return "", err
 	})
-	if err == nil && result["switched"] == true && sw.Log != nil && actor != "" {
-		sw.Log.Action("Emptied the Fable store", actor)
-	}
 	return result, err
 }
 

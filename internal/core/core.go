@@ -36,8 +36,8 @@ func init() {
 		return lifecycle.ActivePrompter.Prompt(prompt)
 	}
 	reporting.FirstRunSetup = firstRunSetup
-	lifecycle.EmptyFableStore = func(s *store.Store) error {
-		_, err := (&Switcher{Store: s}).EmptyFable(false)
+	lifecycle.EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
+		_, err := (&Switcher{Store: s}).EmptyFableWithin(fn)
 		return err
 	}
 }

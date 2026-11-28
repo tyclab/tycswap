@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/ccfile"
@@ -121,13 +120,6 @@ func (s *Store) WithFableLocks(fn func() error) error {
 		defer storage.Release()
 		return fn()
 	})
-}
-
-// GuardedRefreshHold bounds how long a guarded refresh holds the store lock
-// (DESIGN A129): WithFableLocks waits up to lockWait for each of its two
-// Claude Code locks, then the refresh's send and reply bounds run.
-func GuardedRefreshHold(lockWait, send, reply time.Duration) time.Duration {
-	return 2*lockWait + send + reply
 }
 
 // HasFableLogins reports whether a roster account has a readable Fable login.

@@ -466,3 +466,28 @@ func TestCopyHistoryKeepsModTime(t *testing.T) {
 		t.Fatalf("copied transcript mtime %v, %v; want %v", info.ModTime(), err, when)
 	}
 }
+
+// The expired group login's refresh hands the client a context with no
+// deadline of its own: the client's send and reply bounds decide (DESIGN A129).
+func TestRetireRefreshPutsNoDeadlineOnTheClient(t *testing.T) {
+	client, refreshes := groupLoginClient(true)
+	grant := client.RefreshFn
+	client.RefreshFn = func(ctx context.Context, creds string) oauth.RefreshOutcome {
+		if at, ok := ctx.Deadline(); ok && time.Until(at) < oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+			t.Errorf("the caller ends the refresh %s from now, before the client's own bounds", time.Until(at).Round(time.Millisecond))
+		}
+		return grant(ctx, creds)
+	}
+	s := groupFixtureWith(t, client)
+	opus := seedGroupHolding(t, s, groups.Opus, "1", expiredGroupCreds("a1-group", "r1-group"))
+	seedBackup(t, s, "1", "one@x.com", groupCreds("max", "a1-default", "r1-default"), "")
+	if _, err := RetireGroup(opus); err != nil {
+		t.Fatalf("retire of a group with an expired login: %v", err)
+	}
+	if *refreshes != 1 {
+		t.Fatalf("refreshes = %d, want 1", *refreshes)
+	}
+	if backup, _ := s.ReadAccountCredentials("1", "one@x.com"); oauth.ExtractAccessToken(backup) != "a1-fresh" {
+		t.Fatalf("backup did not take the refreshed group login: %s", backup)
+	}
+}

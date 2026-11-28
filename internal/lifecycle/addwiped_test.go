@@ -54,3 +54,38 @@ func TestAddOfAWipedLiveLoginAsksNothingAndLeavesTheFableStore(t *testing.T) {
 		}
 	}
 }
+
+// Claude Code wipes the live login while the overwrite question is open: the
+// add is refused under the lock, and the Fable store of the displaced account
+// is emptied only after that read succeeded, so it stays as it was (DESIGN
+// A130).
+func TestAddRefusedAfterAWipeDuringTheQuestionLeavesTheFableStore(t *testing.T) {
+	s := withFableLogins(t, "2")
+	f, err := s.ForFable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := f.Creds.ReadActive()
+	if err != nil || before == "" {
+		t.Fatal("the Fable store holds no login")
+	}
+	seedLiveLogin(t, s, "a@example.com", "", "", "uuid-a", oauthBlob)
+	prompter := &racingPrompter{t: t, s: s, commit: func() {
+		seedLiveLogin(t, s, "a@example.com", "", "", "uuid-a", `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":4102444800000}}`)
+	}}
+	withPrompter(t, prompter)
+	err = AddAccount(s, ip(2), false, nil)
+	if !prompter.fired {
+		t.Fatal("the question was not asked")
+	}
+	if err == nil || !strings.Contains(err.Error(), "sign in again") {
+		t.Fatalf("AddAccount = %v, want the request to sign in again", err)
+	}
+	after, _, err := f.Creds.ReadActive()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !oauth.SameAccountBlock(before, after) {
+		t.Errorf("the refused add changed the Fable store: live before=%t, live after=%t", before != "", after != "")
+	}
+}

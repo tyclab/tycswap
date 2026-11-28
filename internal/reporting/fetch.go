@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -173,8 +174,8 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	}
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
-		// withTripleLock skips fn when a lock cannot be taken: nothing was persisted, so that path marks skipped too.
-		err := withTripleLockWaiting(s, persistLockWait, func() error {
+		// A lock error other than a timeout skips fn: nothing was persisted, so that path marks skipped too.
+		err := storeReceivedSuccessor(s, n, func() error {
 			live, _, _ := s.Creds.ReadActive()
 			liveRefresh := ""
 			if live != "" {
@@ -239,21 +240,32 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	return recordFromOutcome(outcome)
 }
 
+// storeReceivedSuccessor runs fn under withTripleLock once it has the locks,
+// however long that takes: a successor already received cannot be had again,
+// and every holder of these locks is bounded by its own timeouts (DESIGN
+// A129). Each round that ends in a lock's timeout writes one warning and asks
+// again; a round refused sooner than a timeout, a nested request, or any
+// other failure ends the wait with its error.
+func storeReceivedSuccessor(s *store.Store, num string, fn func() error) error {
+	round := min(s.Lock.Timeout(), cclock.DefaultTimeoutS)
+	for {
+		ran, start := false, time.Now()
+		err := withTripleLock(s, func() error { ran = true; return fn() })
+		kind := cerr.TypeName(err)
+		if ran || kind != string(cerr.KindLock) && kind != string(cerr.KindClaudeCodeLockTimeout) || time.Since(start) < round {
+			return err
+		}
+		if s.Log != nil {
+			s.Log.Warningf("Still waiting to store the refreshed login of account %s", num)
+		}
+	}
+}
+
 // withTripleLock runs fn under FileLock → Claude credentials lock → Claude
 // config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
-// persistLockWait is how long storing a successor already received waits for
-// the store lock: as long as a guarded refresh can hold it (DESIGN A129).
-var persistLockWait = store.GuardedRefreshHold(cclock.DefaultTimeoutS, oauth.DefaultRefreshSendTimeout, oauth.DefaultRefreshReplyTimeout)
-
 func withTripleLock(s *store.Store, fn func() error) error {
-	return withTripleLockWaiting(s, 0, fn)
-}
-
-// withTripleLockWaiting is withTripleLock waiting up to wait for the store
-// lock (its own timeout when <= 0).
-func withTripleLockWaiting(s *store.Store, wait time.Duration, fn func() error) error {
-	return s.Lock.WithWait(wait, func() error {
+	return s.Lock.With(func() error {
 		credLock, err := cclock.AcquireCredentials(0, s.Clk)
 		if err != nil {
 			return err

@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
-	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
@@ -329,41 +329,29 @@ func TestCollect_FetchStaggerIsIndexTimes250ms(t *testing.T) {
 	}
 }
 
-func TestCollect_ActiveRefreshLockContentionShowsExpired(t *testing.T) {
-	// No-owner active refresh whose persist cannot acquire the triple lock: the
-	// rotated credential is discarded, so usage for it must NOT be shown. The
-	// fetch surfaces USAGE_TOKEN_EXPIRED, mirroring Python persist_active's
-	// `except Exception: persist_skipped = True` around the whole lock block
-	// (any lock-acquisition failure marks the persist skipped).
+func TestCollect_DiscardedActiveRefreshShowsExpired(t *testing.T) {
+	// No-owner active refresh whose rotated credential is discarded (the live
+	// refresh token changed while it was out): usage for it must NOT be shown.
+	// The fetch surfaces USAGE_TOKEN_EXPIRED, mirroring Python persist_active's
+	// `persist_skipped = True`.
 	clk := testutil.FixedClock(t, fixedNow)
 	now := clock.Seconds(clk)
 	realNowMS := time.Now().UnixMilli()
 	rotated := oauthCreds("new-access", "new-refresh", realNowMS+3600_000)
 
 	refreshCalls := 0
+	var s *store.Store
 	oc := &oauth.FakeClient{
 		RefreshFn: func(_ context.Context, _ string) oauth.RefreshOutcome {
 			refreshCalls++
+			writeActiveCreds(t, s, oauthCreds("other-access", "other-refresh", realNowMS+3600_000))
 			return oauth.RefreshOutcome{Credentials: rotated}
 		},
 		UsageFn: func(_ context.Context, _ string) (map[string]any, error) {
 			return map[string]any{"five_hour": map[string]any{"utilization": 77.0}}, nil
 		},
 	}
-	s := newStore(t, clk, oc)
-
-	// Short-timeout FileLock so the contended persist acquisition resolves fast.
-	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
-	waitPersistLockFor(t, 20*time.Millisecond)
-
-	// A separate instance holds the tycswap FileLock across the whole collect, so
-	// the persist callback's withTripleLock times out and never runs its inner
-	// write (the rotated credential is not persisted).
-	holder := filelock.New(s.LockFile, time.Second)
-	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
-		t.Fatalf("holder.Acquire = (%v, %v)", ok, err)
-	}
-	t.Cleanup(func() { _ = holder.Release() })
+	s = newStore(t, clk, oc)
 
 	expiredCreds := oauthCreds("old-access", "old-refresh", realNowMS-3600_000)
 	// Backup matches the live creds so the provenance guard passes and the
@@ -383,7 +371,7 @@ func TestCollect_ActiveRefreshLockContentionShowsExpired(t *testing.T) {
 		t.Fatalf("expected a proactive refresh of the expired active token")
 	}
 	if entries["1"].Sentinel != jsonout.UsageTokenExpired {
-		t.Errorf("sentinel = %q want %q (rotated credential discarded under lock contention must not show usage)",
+		t.Errorf("sentinel = %q want %q (a discarded rotated credential must not show usage)",
 			entries["1"].Sentinel, jsonout.UsageTokenExpired)
 	}
 }

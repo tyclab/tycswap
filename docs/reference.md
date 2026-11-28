@@ -890,10 +890,11 @@ overwrites its record.
 A Fable login stays with the account it was signed in as (DESIGN A101): an
 account `--slot` moves takes its Fable login to the new slot (and the Fable
 store's chain record when the store is on it); an account `--slot` overwrites
-loses its Fable login, the Fable store emptied first when it is on that
-account, as for `remove`; a new account takes none, so a Fable login left
-under its slot and email goes. `add` without `--login` and `add-token
---slot` do the same.
+loses its Fable login, the Fable store emptied when it is on that
+account, as for `remove`, but only once the new login was read and nothing
+refused the add, so a refused add leaves the Fable store as it was; a new
+account takes none, so a Fable login left under its slot and email goes.
+`add` without `--login` and `add-token --slot` do the same.
 A login as the live account itself is the exception: `add` then activates the
 new login through the same path as `tycswap switch <n> --force`, which keeps a
 safety copy of the replaced credential, so the live store and `list` hold the
@@ -6244,7 +6245,9 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   the refresh token (DESIGN A129). The log names every refresh whose request
   went out (INFO) and warns when a sent one got no reply: a later `re-login
   needed` for that account comes from it. A refreshed login of the active
-  account is stored after waiting for the store lock up to 35 s.
+  account is stored once the store lock is free, however long that takes;
+  each time the lock's timeout passes meanwhile the log warns `Still waiting
+  to store the refreshed login of account N`.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

@@ -10672,7 +10672,10 @@ no-runner signature: the Retry workflow reruns it, and the rerun finds the
 release. `ensure`'s clean-up stays as the second line of defence; it cannot
 be relied on alone, because GitHub's release list can lag a create
 (`TestTwoRunsCreatingTheReleaseSplitWhenTheListLags` shows the split when
-the list after the create shows only the run's own draft).
+the list after the create shows only the run's own draft). That test cannot
+see the workflow, so CI's `test` job checks it with `yq`: it fails unless
+every `release.yml` job that runs `releasectl publish`, at least two, declares
+the same `concurrency.group` and `cancel-in-progress: false`.
 
 **Holding a release back** is not in the normal path, and nothing needs it:
 a change that must not ship is reverted by the next pull request, whose
@@ -11113,19 +11116,26 @@ is an account number, never an address, and no line carries a token. The
 send bound and the reply wait are tested over HTTP/1.1 and over HTTP/2, the
 token endpoint's protocol; `WroteRequest` fires on both.
 
-A successor that was already received is stored under the locks; that wait
-is as long as one guarded refresh can hold the store lock: the Fable store's
-live refresh waits inside it for Claude Code's two locks of that store
-(`cclock.DefaultTimeoutS` each), then its send and reply bounds run, 53 s in
-all (`store.GuardedRefreshHold`, `persistLockWait` in `reporting`, from the
-existing constants). Until 2026-11-28 the wait was the send and reply bounds
-alone, 35 s, and a successor received while such a refresh still waited for
-a Claude Code lock was discarded with its refresh token spent. The active
-login's refresh without a running client is sent before it takes the locks,
-so a guarded refresh of another account that awaits its reply no longer
-makes it drop the successor after 10 s. Each Claude Code lock wait can run
-one backoff step (at most 0.5 s) past its bound, which the wait does not
-cover.
+A successor that was already received is stored under the locks once it
+has them, however long that takes (`storeReceivedSuccessor` in
+`reporting`): it cannot be had again, and every holder of these locks is
+bounded by its own timeouts. Each time a lock's own timeout passes it asks
+again and logs one WARNING `Still waiting to store the refreshed login of
+account N` (the number only, no token). A lock refused sooner than its
+timeout (a nested request) or any other failure ends the wait and discards
+the successor as before. Until 2026-11-28 the wait had a bound summed from
+other code's lock counts, 35 s and then 53 s (the Fable store's live
+refresh: two Claude Code locks, then its send and reply bounds), and both
+were short: the legacy login's refresh holds the store lock over three such
+locks, and each lock wait can overrun its bound by one polling step; a
+successor received meanwhile was discarded with its refresh token spent.
+The active login's refresh without a running client is sent before it
+takes the locks, so a guarded refresh of another account that awaits its
+reply no longer makes it drop the successor. Whatever waits for the usage
+fetch waits with it: `list`, `status`, the tick, and the dashboard's state
+build (`/api/state`, the first document of a new event stream, and the
+serve loop's periodic broadcast), which answers once the successor is
+stored.
 
 The other callers pass `context.Background()` and so get the full reply wait:
 the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the
@@ -11152,9 +11162,8 @@ for these: the only new long holder is a sent refresh whose reply the network
 holds back, which the tick's `(network?)` and `start`'s `check the connection`
 name, and the lock's own message says another instance holds it. The active
 login's refresh without a running client still runs outside the locks and
-drops its successor when they stay busy longer than a refresh can hold them;
-refreshing it under the locks, as the guarded refreshes do (upstream #167),
-is the open item.
+then waits for them to store its successor; refreshing it under the locks,
+as the guarded refreshes do (upstream #167), is the open item.
 
 ## A130. A login whose tokens Claude Code wiped never replaces a stored login
 
@@ -11181,8 +11190,15 @@ key. Where a live login would be written into a slot it is checked:
   held `unresolved` before.
 - `add` of the live login refuses it with a validation error that asks for a
   new sign-in (`tycswap add --login`), before it asks to overwrite a slot or
-  changes anything: until 2026-11-28 the refusal came after the Fable store's
-  live login of the displaced account had been emptied.
+  changes anything. Under the store lock, after the question, the login is
+  read again and refused there if Claude Code wiped it meanwhile. An add
+  `--slot` (and `add-token --slot`) onto the Fable store's account empties
+  the store only after that read and every other refusal, in the same lock
+  hold: such an add runs under the Fable state lock and the Fable store's
+  locks (`withRosterForDisplacing`, `switching.EmptyFableWithin`), so a
+  refused add leaves the Fable store as it was. Until 2026-11-28 the store
+  was emptied before the add took the lock, first ahead of the refusal and
+  then between the early refusal and the read under the lock.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.

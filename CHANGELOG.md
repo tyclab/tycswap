@@ -2,6 +2,17 @@
 
 ## Since v0.24.1
 
+- **Fixed:** `tycswap add --slot` (and `add-token --slot`) onto the
+  account the Fable store runs on no longer turns that store off when the
+  add is then refused, for example because Claude Code cleared the live
+  login's tokens while the overwrite question was open: the Fable store is
+  emptied only once nothing refuses the add. A refreshed login the active
+  account already received is no longer dropped, with its refresh token
+  spent, when another tycswap holds the store lock longer than 53 s (a
+  session profile's login refresh could): it is stored once the lock is
+  free, and the log warns `Still waiting to store the refreshed login of
+  account N` each time the lock's timeout passes meanwhile (DESIGN A129,
+  A130).
 - **Fixed:** Six follow-ups to the recent fixes. The dashboard now shows the
   warning that no start login has a Mythos login of its own, which `status`
   and `list` already showed. `tycswap add` of a live login whose tokens
