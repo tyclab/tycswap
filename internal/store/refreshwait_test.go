@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // twoSlotStore: slot 1 is the live login, slot 2 an idle backup.
@@ -181,6 +182,22 @@ func TestGuardedRefreshesPutNoDeadlineOnTheClient(t *testing.T) {
 		putFableLive(t, s, held)
 		if out := s.RefreshFableLiveGuarded(context.Background(), noCallerDeadline(t, fresh), "2", fableEmails["2"], held); out.Credentials != fresh {
 			t.Fatalf("RefreshFableLiveGuarded = %+v, want the successor", out)
+		}
+	})
+	t.Run("session profile login", func(t *testing.T) {
+		s, _ := claimedSession(t)
+		s.Platform = platform.Linux
+		const login = `{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"old-refresh"}}`
+		const fresh = `{"claudeAiOauth":{"accessToken":"new-access","refreshToken":"new-refresh","expiresAt":4102444800000}}`
+		err := s.Lock.With(func() error {
+			out, err := s.RefreshLegacyLogin(context.Background(), noCallerDeadline(t, fresh), "1", login)
+			if err == nil && out.Credentials != fresh {
+				t.Errorf("RefreshLegacyLogin = %+v, want the successor", out)
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	})
 }
