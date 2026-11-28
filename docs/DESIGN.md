@@ -10918,3 +10918,29 @@ a start selects as before and says nothing. If the hook does not run, or its
 move is deferred, that session's requests go out on the own login's account
 until its status line or the tick moves it; no other session is affected.
 Sessions on Windows and macOS have no link.
+
+## A127. The account-mismatch line stays at DEBUG while the config names an account with a Mythos login
+
+**Why.** A68's line `live config names slot X (…) but the live credential is
+slot Y's (by …); using Y` is deduplicated within one process only, and every
+tick, status line and hook is a new process. A100 lowered it to DEBUG when
+the config names the Fable store's live account. Since A109 a session can run
+on an account's own Mythos login, and since A125 any start can come up on one;
+such a client writes that account into the shared `~/.claude.json` as a Fable
+session does. With one Mythos session open a box logged the line 102 times in
+35 minutes. The resolver takes the right slot from the credential, so the
+line is expected and harmless there.
+
+**The rule.** The line is logged at DEBUG when the config names the Fable
+store's live account (A100) or an account whose Mythos login is signed in
+(`configNamesMythosLogin`: `MythosLogin(...).SignedIn`); every other mismatch
+stays at WARNING. The predicate is the signed-in login, not `Ready`: a mark or
+disabled flag decides where new sessions go, and a session started on a ready
+login keeps that directory after its account is unmarked or disabled, while
+the tick's rotation only moves sessions to ready logins. It reads the roster
+already in hand and one credential file: no lock, no network, no live-slot
+resolution (the resolver calls it).
+
+**Limits.** A68's case, a running default-login client writing its old account
+back after a switch, is logged at DEBUG too when that account has a
+signed-in Mythos login; the resolution is unchanged either way.

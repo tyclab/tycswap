@@ -5947,6 +5947,13 @@ line `<change> by <actor>` beside the change's own line.
   once per set of accounts: the set is kept as
   `lastFableRoomWithoutLogin` in `fable/autoswitch_state.json`, and a tick
   with room clears it (DESIGN A112).
+- **A config naming another account.** When `~/.claude.json` names one
+  account and the default login's credential is another's, the resolver
+  takes the credential's and logs `live config names slot <x> (…) but the
+  live credential is slot <y>'s (by …); using <y>` once per process: at
+  DEBUG when the config names the Fable store's live account or an account
+  with a signed-in Mythos login, whose sessions write their account there,
+  else as a warning (DESIGN A68, A100, A127).
 
 ## SETTINGS
 

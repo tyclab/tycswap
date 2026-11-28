@@ -207,7 +207,7 @@ func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, defaultLo
 	}
 	if ls.Slot != ls.ConfigSlot {
 		ls.ByLineage = true
-		s.warnLineage(ls, email, orgUUID)
+		s.warnLineage(data, ls, email, orgUUID)
 	}
 	return ls
 }
@@ -420,14 +420,14 @@ func (m *lineageMemo) remember(fp string, id *oauth.Identity, at time.Time) {
 }
 
 // warnLineage logs at DEBUG when the config names the Fable store's live
-// account: Fable sessions write theirs to the shared ~/.claude.json, so each
-// timer tick would warn (DESIGN A100).
-func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
+// account or one with a signed-in Mythos login: sessions there write theirs to
+// the shared ~/.claude.json, so each timer tick would warn (DESIGN A100, A127).
+func (s *Store) warnLineage(data *SequenceData, ls LiveSlot, email, orgUUID string) {
 	if s.Log == nil {
 		return
 	}
 	logf := s.Log.Warningf
-	if s.configNamesFableLive(ls.ConfigSlot) {
+	if s.configNamesFableLive(ls.ConfigSlot) || s.configNamesMythosLogin(data, ls.ConfigSlot) {
 		logf = s.Log.Debugf
 	}
 	if m := s.lineage; m != nil {
@@ -444,6 +444,14 @@ func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
 	}
 	logf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
 		ls.ConfigSlot, email, orgUUID, ls.Slot, ls.Source, ls.Slot)
+}
+
+// configNamesMythosLogin reports whether slot has a signed-in Mythos login,
+// ready or not: a session keeps its login when the account is unmarked or
+// disabled. It reads files only (DESIGN A127).
+func (s *Store) configNamesMythosLogin(data *SequenceData, slot string) bool {
+	login, _ := s.MythosLogin(data, slot)
+	return login.SignedIn
 }
 
 // configNamesFableLive reports whether slot is the Fable store's live
