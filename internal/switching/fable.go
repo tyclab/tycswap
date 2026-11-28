@@ -150,7 +150,8 @@ func EmptyFable(fable *store.Store) (map[string]any, error) {
 // among them. empty, called by fn at most once and only after fn has read
 // what it decides on, empties the store in that same hold (DESIGN A130).
 // With no live login fn runs under the store lock alone and empty does
-// nothing. A nil fn empties the store as EmptyFable does.
+// nothing. A nil fn empties the store as EmptyFable does. An error of fn's
+// after empty emptied the store comes with the result that says so.
 func EmptyFableWithin(fable *store.Store, fn func(empty func() error) error) (map[string]any, error) {
 	return emptyFableWithin(fable, nil, fn)
 }
@@ -216,6 +217,9 @@ func emptyFableWithin(fable *store.Store, check func(*store.SequenceData) error,
 		fn = func(empty func() error) error { return empty() }
 	}
 	if err := f.WithFableLocks(func() error { return fn(empty) }); err != nil {
+		if emptied { // fn failed after the store was emptied
+			return fableResult(true, from, nil, "emptied"), err
+		}
 		return nil, err
 	}
 	return fableResult(emptied, from, nil, "emptied"), nil

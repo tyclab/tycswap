@@ -4,14 +4,18 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 func fableCreds(access string) string {
@@ -177,5 +181,62 @@ func TestSwitchFableWithoutFableLoginsCreatesNothing(t *testing.T) {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatalf("%s exists (%v)", dir, err)
 		}
+	}
+}
+
+// add-token --slot onto the Fable store's account and remove of it empty the
+// store through the core wiring and record it once as done by hand, also when
+// a failure follows the emptying; a remove that leaves the store as it is
+// records nothing (DESIGN A130).
+func TestAddTokenAndRemoveRecordTheFableStoreEmptying(t *testing.T) {
+	failAfter := func(t *testing.T) {
+		prev := lifecycle.EmptyFableStoreWithin
+		lifecycle.EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
+			return prev(s, func(empty func() error) error {
+				if err := fn(empty); err != nil {
+					return err
+				}
+				return errors.New("injected")
+			})
+		}
+		t.Cleanup(func() { lifecycle.EmptyFableStoreWithin = prev })
+	}
+	for _, tc := range []struct {
+		name    string
+		act     func(sw *Switcher) error
+		fail    bool
+		emptied bool
+	}{
+		{"add-token --slot", func(sw *Switcher) error {
+			email, slot := "new@example.com", "1"
+			return sw.AddAccountFromToken("sk-ant-api03-"+strings.Repeat("k", 40), &email, &slot, true)
+		}, false, true},
+		{"remove", func(sw *Switcher) error { return sw.RemoveAccount("1", true) }, false, true},
+		{"remove failing after the emptying", func(sw *Switcher) error { return sw.RemoveAccount("1", true) }, true, true},
+		{"remove of another account", func(sw *Switcher) error { return sw.RemoveAccount("2", true) }, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sw, _, _ := fableSwitcher(t)
+			if tc.fail {
+				failAfter(t)
+			}
+			if err := tc.act(sw); (err != nil) != tc.fail {
+				t.Fatalf("err = %v, want failure %t", err, tc.fail)
+			}
+			if sw.FableStore().On == tc.emptied {
+				t.Fatalf("FableStore().On = %t, want %t", tc.emptied, !tc.emptied)
+			}
+			raw, err := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			want := 0
+			if tc.emptied {
+				want = 1
+			}
+			if n := strings.Count(string(raw), "Emptied the Fable store by hand"); n != want {
+				t.Errorf("%d records of the emptying, want %d", n, want)
+			}
+		})
 	}
 }

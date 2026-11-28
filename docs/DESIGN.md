@@ -11205,11 +11205,14 @@ key. Where a live login would be written into a slot it is checked:
   session profile and Fable login, writing the new login's backups and the
   roster (write errors), and deleting the account's Mythos login, which waits
   up to 9 s for each of that login's two Claude Code locks and fails while a
-  session refreshing on it holds one longer. Until 2026-11-28 the add emptied the store
+  session refreshing on it holds one longer. The emptying is logged
+  `Emptied the Fable store by hand` once, when the store was emptied, a
+  failure after it included. Until 2026-11-28 the add emptied the store
   before it took the lock, then before the read under the lock, then before
   the session refusals (for the account moving in, after the displaced
   account was deleted); `remove` emptied it before its own lock and then
-  refused a session that started during its question.
+  refused a session that started during its question; and from the second
+  of these fixes the emptying was not logged.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.

@@ -37,7 +37,7 @@ func init() {
 	}
 	reporting.FirstRunSetup = firstRunSetup
 	lifecycle.EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
-		_, err := (&Switcher{Store: s}).EmptyFableWithin(fn)
+		_, err := (&Switcher{Store: s}).emptyFableWithinBy(fn, "hand")
 		return err
 	}
 }

@@ -99,8 +99,14 @@ func (sw *Switcher) EmptyFable(jsonOut bool) (map[string]any, error) {
 
 // EmptyFableBy is EmptyFable with the log line's actor ("" writes none).
 func (sw *Switcher) EmptyFableBy(jsonOut bool, actor string) (map[string]any, error) {
-	result, err := sw.EmptyFableWithin(nil)
-	if err == nil && result["switched"] == true && sw.Log != nil && actor != "" {
+	return sw.emptyFableWithinBy(nil, actor)
+}
+
+// emptyFableWithinBy is EmptyFableWithin that logs the emptying as actor's
+// action once the store was emptied, also when fn fails after that.
+func (sw *Switcher) emptyFableWithinBy(fn func(empty func() error) error, actor string) (map[string]any, error) {
+	result, err := sw.EmptyFableWithin(fn)
+	if result["switched"] == true && sw.Log != nil && actor != "" {
 		sw.Log.Action("Emptied the Fable store", actor)
 	}
 	return result, err
