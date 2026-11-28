@@ -45,6 +45,7 @@ type Engine struct {
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
 	reserved     func(num string) bool
 	reservedRank func(num string) int
+	rankRead     func() func(num string) int
 	opusOnly     func() bool
 	holdToken    string
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
@@ -94,6 +95,11 @@ const (
 // WithReservedRank ranks the accounts; without it a reserved one is RankReserved (A131).
 func WithReservedRank(rank func(num string) int) Option {
 	return func(e *Engine) { e.reservedRank = rank }
+}
+
+// WithReservedRankRead reads the ranks afresh; a reserved hand-over checks them again before its switch (A131).
+func WithReservedRankRead(read func() func(num string) int) Option {
+	return func(e *Engine) { e.rankRead = read }
 }
 
 // WithUnservable names the derived models no usable account can serve; the

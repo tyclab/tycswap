@@ -308,6 +308,9 @@ func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent fun
 		autoswitch.WithClock(sw.Clk),
 		autoswitch.WithReserved(policy.Reserved),
 		autoswitch.WithReservedRank(policy.ReservedRank),
+		autoswitch.WithReservedRankRead(func() func(string) int {
+			return defaultSessionPolicy(sw.Store, policy.Settings, sw.Clk.Now()).ReservedRank
+		}),
 		autoswitch.WithUnservable(policy.Unservable),
 		autoswitch.WithServes(reporting.MythosModel, policy.Serves),
 		autoswitch.WithEnabled(func() bool { return autoSwitchOn(root) }),

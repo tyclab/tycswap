@@ -11222,6 +11222,21 @@ under both strategies, and an idle Opus start (A105) takes a rank 3 account
 after a rank 2 one, both after the others and before the logins at a limit.
 No other trigger changes.
 
+**The recheck.** The policy, and with it every rank, is read once per tick
+(A116). A Mythos session that starts on the target's Mythos login after that
+read would let the hand-over land on an account that is rank 3 by then, and
+the next tick would move back. So right before a `reserved` switch, under the
+engine's state lock and after the selection's own recheck, the engine reads
+the policy afresh (`autoswitch.WithReservedRankRead`) and drops the switch
+when the target's rank is no longer strictly lower than the current
+account's: `reserved-no-target` with `account N ranks no lower than the
+active account any more`. The tick tries no other target; the next one
+decides on its own read. The session records' lock is not taken across the
+switch: the read and the switch stay two steps, so a session that starts on
+the target's Mythos login between the fresh read and the switch, or while the
+switch runs, is still not seen, and the next tick may move the default login
+back once.
+
 **Why 3 after 2.** Mythos room is the scarcest a box has, and the account
 whose Mythos login runs sessions is the one that needs it; the Fable
 store's account is the better place for the default login to rest.
