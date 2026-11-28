@@ -101,10 +101,8 @@ func ExtractAccessToken(creds string) string {
 	return tok
 }
 
-// TokensWiped reports whether creds is a JSON object that carries neither an
-// access nor a refresh token under claudeAiOauth (the object absent
-// included). Claude Code empties both in place when a refresh is rejected;
-// such a login is never stored over a slot's login (DESIGN A130).
+// TokensWiped: creds is a JSON object with neither an access nor a refresh
+// token under claudeAiOauth, as Claude Code leaves a rejected login (A130).
 func TokensWiped(creds string) bool {
 	if _, ok := decodeCredsMap(creds); !ok {
 		return false

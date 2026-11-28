@@ -31,7 +31,6 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 	if backup != "" && fingerprintEqual(backup, originalCreds) {
 		return "own-family", ""
 	}
-	// A login Claude Code wiped carries nothing to store (DESIGN A130).
 	if oauth.TokensWiped(originalCreds) {
 		return "wiped", ""
 	}
