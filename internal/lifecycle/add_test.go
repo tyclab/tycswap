@@ -496,7 +496,7 @@ func TestAddMigrateTruncatedRosterKeepsOtherSlotsAndDeletesBackups(t *testing.T)
 		acct{num: "2", email: "alice@example.com", uuid: "uuid-a", alias: "work", creds: "c2", config: "g2"},
 	)
 	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", oauthBlob)
-	s.Creds = &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive"}
+	s.Creds = &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive", skip: 1} // the first read is the early refusal (DESIGN A130)
 
 	if err := AddAccount(s, ip(5), false, nil); err != nil {
 		t.Fatalf("AddAccount migrating into a truncated roster: %v", err)
@@ -972,7 +972,7 @@ func TestAddMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
 	)
 	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", oauthBlob)
 	// A concurrent `tycswap remove keep` commits while the live credential is read.
-	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive",
+	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive", skip: 1, // the first read is the early refusal (DESIGN A130)
 		commit: commitRival(t, s, ip(2),
 			acct{num: "2", email: "alice@example.com", uuid: "uuid-a", alias: "work"},
 		)}
@@ -1014,7 +1014,7 @@ func TestAddRefreshInPlaceCommitsTheRosterItResolvedFrom(t *testing.T) {
 	)
 	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", oauthBlob)
 	// A concurrent `tycswap remove keep` commits while the live credential is read.
-	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive",
+	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive", skip: 1, // the first read is the early refusal (DESIGN A130)
 		commit: commitRival(t, s, ip(2),
 			acct{num: "2", email: "alice@example.com", uuid: "uuid-a"},
 		)}

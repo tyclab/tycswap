@@ -350,10 +350,16 @@ type racingCreds struct {
 	on     string
 	commit func()
 	done   bool
+	// skip lets that many calls of on pass first.
+	skip int
 }
 
 func (c *racingCreds) fire(method string) {
 	if c.on != method || c.done {
+		return
+	}
+	if c.skip > 0 {
+		c.skip--
 		return
 	}
 	c.done = true

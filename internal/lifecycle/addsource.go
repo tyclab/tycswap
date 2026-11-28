@@ -113,6 +113,19 @@ func (src AddSource) material(s *store.Store) (creds, configText string, err err
 	return oauth.AccountOnly(rawCreds), string(rawConfig), nil
 }
 
+// refuseUnstorable gives material's refusals before an add asks or changes
+// anything; material reads the login again under the lock.
+func (src AddSource) refuseUnstorable(s *store.Store) error {
+	if src.isLoginDir() {
+		return CheckLogin(src)
+	}
+	creds, err := readActiveCredential(s)
+	if err != nil {
+		return err
+	}
+	return rejectLiveAPIKeyCapture(creds)
+}
+
 // errLoginIncomplete is the one answer for a login that left nothing usable
 // behind: a non-zero exit, no oauthAccount, or no credential file.
 func errLoginIncomplete() error {

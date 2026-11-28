@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // add refuses a live login whose tokens Claude Code wiped (DESIGN A130).
@@ -18,5 +19,38 @@ func TestAddRefusesAWipedLiveLogin(t *testing.T) {
 	}
 	if c, _ := s.ReadAccountCredentials("1", "alice@example.com"); c != oauthBlob {
 		t.Errorf("Account-1's stored login changed to %q", c)
+	}
+}
+
+// The refusal of a wiped live login comes before anything is asked or
+// changed: an add into the slot of the Fable store's account neither asks to
+// overwrite it nor empties the Fable store (DESIGN A130).
+func TestAddOfAWipedLiveLoginAsksNothingAndLeavesTheFableStore(t *testing.T) {
+	for _, assumeYes := range []bool{true, false} {
+		s := withFableLogins(t, "2")
+		f, err := s.ForFable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _, err := f.Creds.ReadActive()
+		if err != nil || before == "" {
+			t.Fatal("the Fable store holds no login")
+		}
+		prompter := &fakePrompter{prompts: []promptResp{{val: "y", ok: true}}}
+		withPrompter(t, prompter)
+		seedLiveLogin(t, s, "a@example.com", "", "", "uuid-a", `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":4102444800000}}`)
+		if err := AddAccount(s, ip(2), assumeYes, nil); err == nil || !strings.Contains(err.Error(), "sign in again") {
+			t.Fatalf("assumeYes=%t: AddAccount = %v, want the request to sign in again", assumeYes, err)
+		}
+		if prompter.pi != 0 {
+			t.Errorf("assumeYes=%t: the refused add asked %d question(s)", assumeYes, prompter.pi)
+		}
+		after, _, err := f.Creds.ReadActive()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !oauth.SameAccountBlock(before, after) {
+			t.Errorf("assumeYes=%t: the refused add changed the Fable store: live before=%t, live after=%t", assumeYes, before != "", after != "")
+		}
 	}
 }

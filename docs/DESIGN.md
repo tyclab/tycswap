@@ -11150,7 +11150,9 @@ key. Where a live login would be written into a slot it is checked:
   kept.` A group or legacy release that meets `wiped` holds the login as it
   held `unresolved` before.
 - `add` of the live login refuses it with a validation error that asks for a
-  new sign-in (`tycswap add --login`).
+  new sign-in (`tycswap add --login`), before it asks to overwrite a slot or
+  changes anything: until 2026-11-28 the refusal came after the Fable store's
+  live login of the displaced account had been emptied.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.
