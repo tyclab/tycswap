@@ -3,7 +3,9 @@ package cli
 import (
 	"errors"
 	"strconv"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -58,12 +60,19 @@ func retireGroups(root *core.Switcher, emit func(autoswitch.Event), dry bool) {
 	}
 }
 
-// retireProfiles retires what `tycswap run` and `env` left behind on the same
+// A write takes milliseconds, so an hour-old temp file has no writer; one that resumes gets the rename's error, as for any failed write.
+const staleTempAge = time.Hour
+
+// retireProfiles retires what `tycswap run` and `env` left behind, and the
+// temp files of killed writes in the data root (DESIGN A128), on the same
 // rounds as retireGroups: scheduled and real, never a dry run or a status
 // line's tick (DESIGN A92). A held profile is warned about once per login.
 func retireProfiles(root *core.Switcher, dry bool) {
 	if dry {
 		return
+	}
+	if n := atomicfile.SweepStale(root.BackupDir(), staleTempAge, root.Clk.Now()); n > 0 && root.Log != nil {
+		root.Log.Infof("Removed %d stale temporary files", n)
 	}
 	switching.RetireLegacyProfiles(root.Store, func(number string, err error) {
 		switch {

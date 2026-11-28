@@ -15,6 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -45,6 +46,8 @@ func lineageCreds(access, refresh string) string {
 func lineageFixture(t *testing.T, kind5 string) *Store {
 	t.Helper()
 	s := freshStore(t)
+	// The mismatch line is logged at DEBUG (DESIGN A127).
+	s.Log = logging.NewWithClock(s.BackupDir(), true, s.Clk)
 	kind := ""
 	if kind5 != "" {
 		kind = `, "kind": "` + kind5 + `"`
@@ -119,8 +122,8 @@ func TestResolveLiveSlotPrefersCredentialLineage(t *testing.T) {
 				t.Fatalf("CurrentAccountNumber = %v, want 5", n)
 			}
 			raw, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
-			if !strings.Contains(string(raw), "WARNING") || !strings.Contains(string(raw), lineageWarning) {
-				t.Fatalf("log lacks the lineage WARNING; got: %s", raw)
+			if !strings.Contains(string(raw), "DEBUG - "+lineageWarning) || strings.Contains(string(raw), "WARNING") {
+				t.Fatalf("log lacks the lineage line at DEBUG, or warns; got: %s", raw)
 			}
 			if n := lineageWarnings(t, s); n != 1 {
 				t.Fatalf("lineage warnings = %d, want 1", n)
