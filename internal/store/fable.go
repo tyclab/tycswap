@@ -397,9 +397,7 @@ func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, n
 			}
 			return nil
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, GuardedRefreshTimeout)
-		defer cancel()
-		out = c.Refresh(reqCtx, backup)
+		out = f.SendRefresh(ctx, c, "account "+num+"'s Fable login", backup)
 		if out.Credentials == "" {
 			return nil
 		}
@@ -442,9 +440,7 @@ func (s *Store) RefreshFableLiveGuarded(ctx context.Context, c oauth.Client, num
 		if f.fableLiveSlot(data, live, false).Slot != num {
 			return nil
 		}
-		reqCtx, cancel := context.WithTimeout(ctx, GuardedRefreshTimeout)
-		defer cancel()
-		out = c.Refresh(reqCtx, live)
+		out = f.SendRefresh(ctx, c, "the Fable store's login of account "+num, live)
 		if out.Credentials == "" {
 			return nil
 		}

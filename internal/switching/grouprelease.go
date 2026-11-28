@@ -95,13 +95,8 @@ func refreshExpiredGroupLogin(s *store.Store) (string, error) {
 			return ErrGroupBusy
 		}
 		defer cred.Release()
-		ctx, cancel := context.WithTimeout(context.Background(), store.GuardedRefreshTimeout)
-		defer cancel()
-		out := s.OAuth.Refresh(ctx, live)
+		out := s.SendRefresh(context.Background(), s.OAuth, "group "+string(s.GroupID())+"'s expired login", live)
 		if out.Credentials == "" {
-			if s.Log != nil {
-				s.Log.Warningf("Group %s's expired login did not refresh (%s)", s.GroupID(), out.Error)
-			}
 			if out.Error == oauth.ErrInvalidGrant {
 				dead = live
 			}

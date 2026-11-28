@@ -622,7 +622,12 @@ behind it there is no live credential, and a switch away stops with
 overwrite its backup` instead of storing the file as the outgoing account's
 credential. An account with a base URL is the exception: no credential is its
 normal state, its stored key is its credential, and the switch away backs up
-its config only. A rollback restores the exact pre-switch credential (an API key
+its config only. A live login whose tokens Claude Code cleared after a
+rejected refresh (its `claudeAiOauth` has neither an access nor a refresh
+token) is never stored: the switch away backs up the config only, keeps the
+account's stored login and warns `The live login carries no tokens (…);
+Account-<n>'s stored login was kept.`; `add` refuses it and asks for a new
+sign-in, and `import` refuses an entry holding one (DESIGN A130). A rollback restores the exact pre-switch credential (an API key
 with the seat-wide keys left beside it).
 
 A switch that moves the live account is a switch by hand: it leaves
@@ -6207,6 +6212,11 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   meanwhile (another process refreshed it, or a switch wrote it back) the
   newer credential is used and nothing is refreshed. A busy lock skips the
   refresh for that pass. The Codex side has worked this way from the start.
+  A refresh request that cannot be sent within 5 s is dropped; once sent, its
+  reply is waited for up to 30 s, since the server may already have replaced
+  the refresh token (DESIGN A129). The log names every refresh of a stored
+  login (INFO) and warns when a sent one got no reply: a later `re-login
+  needed` for that account comes from it.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

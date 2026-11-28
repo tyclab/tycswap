@@ -101,6 +101,18 @@ func ExtractAccessToken(creds string) string {
 	return tok
 }
 
+// TokensWiped: creds is a JSON object with neither an access nor a refresh
+// token under claudeAiOauth, as Claude Code leaves a rejected login (A130).
+func TokensWiped(creds string) bool {
+	if _, ok := decodeCredsMap(creds); !ok {
+		return false
+	}
+	oauth := ExtractOAuthData(creds)
+	access, _ := oauth["accessToken"].(string)
+	refresh, _ := oauth["refreshToken"].(string)
+	return access == "" && refresh == ""
+}
+
 // ExpiresAtMS is the login's expiresAt in epoch milliseconds; ok is false
 // when it is missing or not a number.
 func ExpiresAtMS(creds string) (float64, bool) {

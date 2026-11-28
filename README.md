@@ -1544,7 +1544,9 @@ switch; restarting Claude Code applies it at once.
 **Same-account drift.** tycswap and Claude Code share the same credential store.
 While an account is active, Claude Code may refresh its own token; tycswap folds
 such refreshes back into the account's backup on the next operation, so the
-backup does not go stale against the live login.
+backup does not go stale against the live login. A live login whose tokens
+Claude Code cleared after a rejected refresh is never folded back: the
+account keeps its stored login.
 
 **API-key accounts.** An account authenticated by API key has no measured usage
 quota. It shows `API key (no quota)` in the list, never carries usage

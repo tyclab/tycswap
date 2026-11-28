@@ -844,3 +844,17 @@ func TestImportRetainsLocalMythosMarkOnlyForExistingIdentity(t *testing.T) {
 		t.Fatal("new imported identity inherited the Mythos mark")
 	}
 }
+
+// A login whose tokens Claude Code wiped is refused, never stored (DESIGN A130).
+func TestImportRefusesAWipedLogin(t *testing.T) {
+	f := newFakeAccounts(t)
+	a := oauthAccount(1, "a@example.com", "")
+	a["credentials"] = map[string]any{"claudeAiOauth": map[string]any{"accessToken": "", "refreshToken": "", "expiresAt": 4102444800000}}
+	_, err := importText(t, f, envelopeJSON(nil, a), false)
+	if msg := transferErr(t, err); !strings.Contains(msg, "carry no tokens") {
+		t.Errorf("message = %q", msg)
+	}
+	if len(f.writtenCreds) != 0 {
+		t.Error("a wiped login was written")
+	}
+}

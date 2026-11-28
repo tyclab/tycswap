@@ -200,6 +200,9 @@ func Import(acc Accounts, source string, force bool) error {
 				// the seat's may carry the exporting seat's MCP server logins
 				// or client secrets, which are not this account's (DESIGN A29).
 				credsText = oauth.AccountOnly(string(b))
+				if oauth.TokensWiped(credsText) {
+					return cerr.Transfer("credentials for %s carry no tokens (Claude Code cleared them); sign in to that account again and export it anew", email)
+				}
 			}
 
 			key := [2]string{email, orgUUID}
