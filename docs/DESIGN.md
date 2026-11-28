@@ -11118,11 +11118,14 @@ token endpoint's protocol; `WroteRequest` fires on both.
 A successor that was already received is stored under the locks once it
 has them, however long that takes (`storeReceivedSuccessor` in
 `reporting`): it cannot be had again, and every holder of these locks is
-bounded by its own timeouts. Each time a lock's own timeout passes it asks
-again and logs one WARNING `Still waiting to store the refreshed login of
-account N` (the number only, no token). A lock refused sooner than its
-timeout (a nested request) or any other failure ends the wait and discards
-the successor as before. Until 2026-11-28 the wait had a bound summed from
+bounded by its own timeouts. Each round it loses to another process ends
+when a lock's own timeout passes; it asks again and logs one WARNING `Still
+waiting to store the refreshed login of account N` (the number only, no
+token). A wait behind a fetch of the same process (the usage fetches of one
+run share the store's lock object) waits on that lock's in-process mutex
+before its timer starts, so it ends with that fetch's own timeouts and
+writes none. A lock refused sooner than its timeout (a nested request) or
+any other failure ends the wait and discards the successor as before. Until 2026-11-28 the wait had a bound summed from
 other code's lock counts, 35 s and then 53 s (the Fable store's live
 refresh: two Claude Code locks, then its send and reply bounds), and both
 were short: the legacy login's refresh holds the store lock over three such
