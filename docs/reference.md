@@ -640,7 +640,9 @@ rejected refresh (its `claudeAiOauth` has neither an access nor a refresh
 token) is never stored: the switch away backs up the config only, keeps the
 account's stored login and warns `The live login carries no tokens (…);
 Account-<n>'s stored login was kept.`; `add` refuses it and asks for a new
-sign-in, and `import` refuses an entry holding one (DESIGN A130). A rollback restores the exact pre-switch credential (an API key
+sign-in; `export` takes the account's stored login instead and says so, and
+`import` skips an entry holding one with a warning and imports the others
+(DESIGN A130). A rollback restores the exact pre-switch credential (an API key
 with the seat-wide keys left beside it).
 
 A switch that moves the live account is a switch by hand: it leaves
@@ -1751,10 +1753,10 @@ the session on the default login, the Fable store or a Mythos login by its
 model. With no such login ready the selection runs as described above
 (DESIGN A125). When a start login carries the Mythos mark or holds a Mythos
 login directory, the selection is preceded by `tycswap start: <reason>; no
-start login has a Mythos login of its own, so this start switches the default
-login for every session on it. Give Account-<n> one with <commands>.` (the
-commands of the warning in `tycswap status`), with `holds` for a start
-login at its limit, `the Fable store` and the `Fable store: ` reason on the
+start login has a Mythos login of its own, so this start may switch or hold
+the default login for every session on it. Give Account-<n> one with
+<commands>.` (the commands of the warning in `tycswap status`), with `the
+Fable store` and the `Fable store: ` reason on the
 Fable store, and goes to `tycswap.log` as `start: <line>`; the selection's own
 line (`Switched to start login Account-<n>.`) follows (DESIGN A126).
 
@@ -6234,9 +6236,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   refresh for that pass. The Codex side has worked this way from the start.
   A refresh request that cannot be sent within 5 s is dropped; once sent, its
   reply is waited for up to 30 s, since the server may already have replaced
-  the refresh token (DESIGN A129). The log names every refresh of a stored
-  login (INFO) and warns when a sent one got no reply: a later `re-login
-  needed` for that account comes from it.
+  the refresh token (DESIGN A129). The log names every refresh whose request
+  went out (INFO) and warns when a sent one got no reply: a later `re-login
+  needed` for that account comes from it. A refreshed login of the active
+  account is stored after waiting for the store lock up to 35 s.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

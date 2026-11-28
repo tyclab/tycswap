@@ -663,7 +663,7 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 			return "", false, true, dir
 		}
 		if hint != "" {
-			reportStartSelection(sw, stderr, why+ownLoginMissing("the Fable store", snap.CurrentMarked, hint))
+			reportStartSelection(sw, stderr, why+ownLoginMissing("the Fable store", hint))
 		}
 	}
 	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),

@@ -105,3 +105,33 @@ func TestStatusAndListWarnWithoutAnOwnStartLogin(t *testing.T) {
 		})
 	}
 }
+
+// An account that is no OAuth login can never have a Mythos login: with the
+// start and Mythos marks it is not enrolled, and nothing is said (A126).
+func TestOwnStartLoginWarningSkipsAnAccountThatIsNoOAuthLogin(t *testing.T) {
+	s := newStore(t, nil, nil)
+	writeLiveConfig(t, s, "alice@example.com", "")
+	writeSequenceRaw(t, s, `{
+  "activeAccountNumber": 1, "lastUpdated": "x", "sequence": [1, 2, 3],
+  "accounts": {
+    "1": {"email": "alice@example.com", "organizationUuid": "", "organizationName": ""},
+    "2": {"email": "bob@example.com", "organizationUuid": "", "organizationName": "", "kind": "api_key", "startLogin": true, "mythos": true},
+    "3": {"email": "carol@example.com", "organizationUuid": "", "organizationName": "", "startLogin": true}
+  }
+}`)
+	writeActiveCreds(t, s, oauthCreds("at1", "rt1", 0))
+	writeBackup(t, s, "3", "carol@example.com", oauthCreds("at3", "rt3", 0), `{"oauthAccount":{"emailAddress":"carol@example.com"}}`)
+	if _, err := settings.SetSetting(s.BackupDir(), "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := s.ReadSequence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready, enrolled := s.OwnStartLogins(data); len(ready) != 0 || len(enrolled) != 0 {
+		t.Errorf("OwnStartLogins = %v, %v; want none", ready, enrolled)
+	}
+	if warning := OwnStartLoginWarning(s, data); warning != "" {
+		t.Errorf("warning = %q, want none", warning)
+	}
+}

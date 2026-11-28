@@ -12,22 +12,10 @@ import (
 const RefreshDeclined = "refresh_declined"
 
 // SendRefresh sends c's refresh of creds, subject's login ("account 3"), and
-// logs it: INFO before, WARNING when the request went out and no verdict came
-// (the grant may be spent) and for invalid_grant, DEBUG otherwise. The client
-// bounds the request (oauth.DefaultRefreshSendTimeout, DESIGN A129).
+// logs it to the store's log as oauth.LoggedRefresh does. The client bounds
+// the request (DESIGN A129).
 func (s *Store) SendRefresh(ctx context.Context, c oauth.Client, subject, creds string) oauth.RefreshOutcome {
-	s.Log.Infof("Refreshing the token of %s", subject)
-	out := c.Refresh(ctx, creds)
-	switch {
-	case out.Credentials != "":
-	case out.Unanswered:
-		s.Log.Warningf("The token refresh of %s was sent but got no answer; its refresh token may be spent, and a later \"re-login needed\" for this account comes from this", subject)
-	case out.Error == oauth.ErrInvalidGrant:
-		s.Log.Warningf("The token refresh of %s failed (%s)", subject, out.Error)
-	default:
-		s.Log.Debugf("The token refresh of %s failed (%s)", subject, out.Error)
-	}
-	return out
+	return oauth.LoggedRefresh(ctx, c, s.Log, subject, creds)
 }
 
 // The lock is taken BEFORE the refresh: a rotated refresh token may die once issued, so an unpersistable refresh must not run.

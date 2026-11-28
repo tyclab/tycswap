@@ -194,3 +194,24 @@ func TestSweepStaleThroughASymlinkedRoot(t *testing.T) {
 		t.Fatalf("SweepStale through a symlinked root = %d, want 1", got)
 	}
 }
+
+// An empty root is no directory: the working directory is not swept.
+func TestSweepStaleEmptyRoot(t *testing.T) {
+	now := time.Now()
+	old := now.Add(-2 * time.Hour)
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	inCwd := filepath.Join(cwd, "sub", ".atomic-9.tmp")
+	if err := os.MkdirAll(filepath.Dir(inCwd), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(inCwd, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(inCwd, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if got := SweepStale("", time.Hour, now); got != 0 || !fileExists(inCwd) {
+		t.Fatalf("SweepStale(\"\") = %d, kept %v; want 0 and the file kept", got, fileExists(inCwd))
+	}
+}

@@ -340,3 +340,32 @@ func TestExportLeavesMCPOAuthOut(t *testing.T) {
 		t.Errorf("trustedDeviceToken travels with the account; got %v", creds)
 	}
 }
+
+// A wiped active login is not exported: the account's stored login goes out,
+// as for an inactive account, and stderr says so; the archive imports whole
+// (A130).
+func TestExportOfAWipedActiveLoginTakesTheStoredLogin(t *testing.T) {
+	const wiped = `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":4102444800000}}`
+	const stored = `{"claudeAiOauth":{"accessToken":"at-stored","refreshToken":"rt-stored","expiresAt":4102444800000}}`
+	src := newFakeAccounts(t)
+	src.seedAccount("1", "a@example.com", "", recordOpts{creds: stored, config: `{"oauthAccount":{"emailAddress":"a@example.com"}}`})
+	src.seedAccount("2", "b@example.com", "", recordOpts{creds: strings.ReplaceAll(stored, "stored", "b"), config: `{"oauthAccount":{"emailAddress":"b@example.com"}}`})
+	src.curEmail, src.curOrg, src.curOK = "a@example.com", "", true
+	src.activeCreds = wiped
+	src.activeConfig, src.activeConfigOK = `{"oauthAccount":{"emailAddress":"a@example.com"}}`, true
+	var err error
+	stdout, stderr := captureIO(t, func() { err = Export(src, "-", "", false) })
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if !strings.Contains(stdout, "rt-stored") {
+		t.Errorf("the export carries the wiped live login, not the stored one:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "Account-1") || !strings.Contains(stderr, "no tokens") {
+		t.Errorf("stderr = %q, want a note naming Account-1", stderr)
+	}
+	dst := newFakeAccounts(t)
+	if _, err := importText(t, dst, strings.TrimRight(stdout, "\n"), false); err != nil || len(dst.writtenCreds) != 2 {
+		t.Fatalf("import of the export: %v, %d logins written; want both", err, len(dst.writtenCreds))
+	}
+}

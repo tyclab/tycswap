@@ -258,3 +258,23 @@ func TestDisableRechecksSourceAfterWaitingForStateLock(t *testing.T) {
 		t.Fatalf("superseded disable changed the re-enabled login: %v", err)
 	}
 }
+
+// A wiped default login of an account being disabled never reaches the park:
+// the withdraw refuses a login only the config or the last install attributes
+// first, and the stored login stays (A130).
+func TestDisablingAnAccountWithAWipedDefaultLoginKeepsItsStoredLogin(t *testing.T) {
+	const wiped = `{"claudeAiOauth":{"accessToken":"","refreshToken":"","expiresAt":4102444800000}}`
+	for _, others := range []bool{true, false} {
+		sw := withdrawalFixture(t)
+		if !others {
+			setRecord(t, sw, "2", "disabled", true)
+			setRecord(t, sw, "3", "disabled", true)
+		}
+		writeFile(t, filepath.Join(sw.Home, ".claude", ".credentials.json"), wiped)
+		before, _ := sw.ReadAccountCredentials("1", fableEmail("1"))
+		err := sw.SetAccountDisabled("1", true)
+		if after, _ := sw.ReadAccountCredentials("1", fableEmail("1")); err == nil || after != before {
+			t.Errorf("others enabled %v: SetAccountDisabled = %v, stored login unchanged %v; want a refusal and no change", others, err, after == before)
+		}
+	}
+}

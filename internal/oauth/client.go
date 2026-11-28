@@ -103,6 +103,10 @@ func (c *HTTPClient) refreshBounds() (send, reply time.Duration) {
 	return send, reply
 }
 
+// refreshSentKey carries the function a refresh calls once its request is
+// written (LoggedRefresh's INFO line).
+type refreshSentKey struct{}
+
 // refreshPhase cancels a refresh at the send bound until the request is
 // written, then at the reply bound, and remembers whether it was written.
 type refreshPhase struct {
@@ -111,24 +115,29 @@ type refreshPhase struct {
 	cancel context.CancelFunc
 	reply  time.Duration
 	sent   bool
+	onSent func()
 }
 
 func startRefreshPhase(ctx context.Context, send, reply time.Duration) (context.Context, *refreshPhase) {
 	reqCtx, cancel := context.WithCancel(ctx)
 	p := &refreshPhase{cancel: cancel, reply: reply}
+	p.onSent, _ = ctx.Value(refreshSentKey{}).(func())
 	p.timer = time.AfterFunc(send, cancel)
 	return httptrace.WithClientTrace(reqCtx, &httptrace.ClientTrace{WroteRequest: p.wrote}), p
 }
 
 func (p *refreshPhase) wrote(info httptrace.WroteRequestInfo) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if info.Err != nil || p.sent {
-		return
+	first := info.Err == nil && !p.sent
+	if first {
+		p.sent = true
+		if p.timer.Stop() {
+			p.timer = time.AfterFunc(p.reply, p.cancel)
+		}
 	}
-	p.sent = true
-	if p.timer.Stop() {
-		p.timer = time.AfterFunc(p.reply, p.cancel)
+	p.mu.Unlock()
+	if first && p.onSent != nil {
+		p.onSent()
 	}
 }
 

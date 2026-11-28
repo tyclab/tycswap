@@ -846,15 +846,21 @@ func TestImportRetainsLocalMythosMarkOnlyForExistingIdentity(t *testing.T) {
 }
 
 // A login whose tokens Claude Code wiped is refused, never stored (DESIGN A130).
-func TestImportRefusesAWipedLogin(t *testing.T) {
+// One wiped login does not block the archive: it is skipped with a warning
+// that names the account, the others are imported (A130).
+func TestImportSkipsAWipedLogin(t *testing.T) {
 	f := newFakeAccounts(t)
 	a := oauthAccount(1, "a@example.com", "")
 	a["credentials"] = map[string]any{"claudeAiOauth": map[string]any{"accessToken": "", "refreshToken": "", "expiresAt": 4102444800000}}
-	_, err := importText(t, f, envelopeJSON(nil, a), false)
-	if msg := transferErr(t, err); !strings.Contains(msg, "carry no tokens") {
-		t.Errorf("message = %q", msg)
+	b := oauthAccount(2, "b@example.com", "")
+	stderr, err := importText(t, f, envelopeJSON(nil, a, b), false)
+	if err != nil {
+		t.Fatalf("Import: %v", err)
 	}
-	if len(f.writtenCreds) != 0 {
-		t.Error("a wiped login was written")
+	if !strings.Contains(stderr, "a@example.com") || !strings.Contains(stderr, "carries no tokens") {
+		t.Errorf("stderr = %q, want a warning naming a@example.com", stderr)
+	}
+	if len(f.writtenCreds) != 1 || f.writtenCreds[0].email != "b@example.com" {
+		t.Errorf("written %v, want b@example.com's login only", f.writtenCreds)
 	}
 }

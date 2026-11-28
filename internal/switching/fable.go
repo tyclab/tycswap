@@ -215,19 +215,26 @@ func fableTargetRefusal(f *store.Store, data *store.SequenceData, num string) er
 // backUpFableOutgoing runs under the locks with the roster read there and ls,
 // the live login's owner resolved from it (backup and chain, a profile answer
 // asked before the locks, else the last install: the store lock keeps the
-// endpoint out). A login taken for the last install's is stashed as well. It
-// returns the outgoing account's ref, nil for an empty store or an unknown
-// login.
+// endpoint out). A login taken for the last install's is stashed as well; a
+// wiped login is neither stored nor stashed (A130). It returns the outgoing
+// account's ref, nil for an empty store or an unknown login.
 func backUpFableOutgoing(f *store.Store, data *store.SequenceData, ls store.LiveSlot) (map[string]any, error) {
 	now, _, err := f.Creds.ReadActive()
 	if err != nil || now == "" {
 		return nil, err
 	}
-	if ls.Slot != "" && oauth.TokensWiped(now) {
-		rec, _ := accountRec(data, ls.Slot)
-		if f.Log != nil {
-			f.Log.Warningf("The Fable store's login carries no tokens (Claude Code clears them when a refresh is rejected); account %s's Fable login was kept", ls.Slot)
+	if oauth.TokensWiped(now) {
+		kept := "it was not stashed"
+		if ls.Slot != "" {
+			kept = "account " + ls.Slot + "'s Fable login was kept"
 		}
+		if f.Log != nil {
+			f.Log.Warningf("The Fable store's login carries no tokens (Claude Code clears them when a refresh is rejected); %s", kept)
+		}
+		if ls.Slot == "" {
+			return nil, nil
+		}
+		rec, _ := accountRec(data, ls.Slot)
 		return numRef(ls.Slot, recStr(rec, "email")), nil
 	}
 	if ls.Slot == "" {

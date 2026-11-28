@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/jsonout"
@@ -173,7 +174,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
 		// withTripleLock skips fn when a lock cannot be taken: nothing was persisted, so that path marks skipped too.
-		err := withTripleLock(s, func() error {
+		err := withTripleLockWaiting(s, persistLockWait, func() error {
 			live, _, _ := s.Creds.ReadActive()
 			liveRefresh := ""
 			if live != "" {
@@ -241,8 +242,18 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 // withTripleLock runs fn under FileLock → Claude credentials lock → Claude
 // config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
+// persistLockWait is how long storing a successor already received waits for
+// the store lock: as long as a refresh can hold it (DESIGN A129).
+var persistLockWait = oauth.DefaultRefreshSendTimeout + oauth.DefaultRefreshReplyTimeout
+
 func withTripleLock(s *store.Store, fn func() error) error {
-	return s.Lock.With(func() error {
+	return withTripleLockWaiting(s, 0, fn)
+}
+
+// withTripleLockWaiting is withTripleLock waiting up to wait for the store
+// lock (its own timeout when <= 0).
+func withTripleLockWaiting(s *store.Store, wait time.Duration, fn func() error) error {
+	return s.Lock.WithWait(wait, func() error {
 		credLock, err := cclock.AcquireCredentials(0, s.Clk)
 		if err != nil {
 			return err

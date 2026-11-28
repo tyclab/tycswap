@@ -71,3 +71,25 @@ func TestSwitchFableOffAWipedLoginKeepsTheFableLogin(t *testing.T) {
 		t.Errorf("no warning about the kept Fable login:\n%s", log)
 	}
 }
+
+// A wiped login in a store no account is named for is not stashed either, as
+// the default switch stashes none (A130).
+func TestSwitchFableOffAWipedUnknownLoginStashesNothing(t *testing.T) {
+	s, f := fableSwitchStore(t)
+	if _, err := SwitchFable(f, "1", FableSwitchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := EmptyFable(f); err != nil {
+		t.Fatal(err)
+	}
+	setFableLive(t, s, wipedLogin)
+	if _, err := SwitchFable(f, "2", FableSwitchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 0 {
+		t.Errorf("unclaimed %v, want none", rows)
+	}
+	if log := logText(t, s); !strings.Contains(log, "The Fable store's login carries no tokens") {
+		t.Errorf("no warning about the wiped login:\n%s", log)
+	}
+}

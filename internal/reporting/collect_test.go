@@ -354,6 +354,7 @@ func TestCollect_ActiveRefreshLockContentionShowsExpired(t *testing.T) {
 
 	// Short-timeout FileLock so the contended persist acquisition resolves fast.
 	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
+	waitPersistLockFor(t, 20*time.Millisecond)
 
 	// A separate instance holds the tycswap FileLock across the whole collect, so
 	// the persist callback's withTripleLock times out and never runs its inner
