@@ -10951,7 +10951,7 @@ signed-in Mythos login; the resolution is unchanged either way.
 target and removes it on any error, but a process killed between create and
 rename (a status line the client times out, a SIGKILL) leaves it. One box
 held 15 such files from three weeks in the data root and its `cache/`, mode
-0600, some of them copies of credentials or config.
+0600, copies of state and config files.
 
 **The rule.** `atomicfile.SweepStale(root, olderThan, now)` resolves `root`
 once (a data root that is itself a symlink is swept), walks it with
@@ -10970,9 +10970,14 @@ the data root only, never at the home directory or `~/.claude`; the profile
 and login directories inside the data root are walked, and there too only
 `atomicfile`'s name is removed.
 
-**Limits.** Only `atomicfile`'s name is swept: nothing else uses it, and the
-other temp names (`*.tmp` of `credstore`, `ccfile` and `switching`,
+**Limits.** Only `atomicfile`'s name is swept: nothing else uses it. Other
+temp names can leak the same way and are left as they are. Slot credentials
+are not written through `atomicfile`: a killed slot write leaves a `*.tmp` of
+`credstore` in `credentials/` or `credentials-fable/`, inside the swept root
+and outside the swept name; the box that held the 15 `.atomic` files had no
+such leftover, so it has no measured case. The others are the `*.tmp` of
+`ccfile` and `switching` (in the home and Claude config directory),
 `.settings-*.tmp`, `.tycswap-*.tmp`, `.tycswap-codex-*.tmp`,
-`.tycswap-copy-*`, `.tycswap-upgrade-*`) can leak the same way and are left
-as they are; `.tycswap-migrate-*.tmp` and `login.*` have their own cleanups.
-A temp file outside the data root is never removed.
+`.tycswap-copy-*` and `.tycswap-upgrade-*`; `.tycswap-migrate-*.tmp` and
+`login.*` have their own cleanups. A temp file outside the data root is never
+removed.
