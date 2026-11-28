@@ -34,6 +34,9 @@ type fakeGitHub struct {
 
 	// onCreate runs after a release is created, before the answer.
 	onCreate func()
+	// unlisted are releases the list does not show yet, as GitHub's list can
+	// lag a create.
+	unlisted map[int64]bool
 	// published is each release's state at the moment it stopped being a draft.
 	published map[string]fakeSnapshot
 }
@@ -194,7 +197,9 @@ func (f *fakeGitHub) serveReleases(w http.ResponseWriter, r *http.Request, seg [
 		var out []Release
 		if r.URL.Query().Get("page") == "1" {
 			for _, id := range sortedIDs(f.releases) {
-				out = append(out, f.releases[id].Release)
+				if !f.unlisted[id] {
+					out = append(out, f.releases[id].Release)
+				}
 			}
 		}
 		f.reply(w, 200, out)

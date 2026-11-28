@@ -224,6 +224,32 @@ func TestTwoRunsCreatingTheReleaseKeepOne(t *testing.T) {
 	}
 }
 
+// When the list right after the create does not show the other run's draft
+// yet, each run keeps its own and the tag ends with two releases: ensure's
+// clean-up cannot prevent that alone, so the workflow never runs two
+// publishes of one tag at once (DESIGN A121).
+func TestTwoRunsCreatingTheReleaseSplitWhenTheListLags(t *testing.T) {
+	f, c := newFakeGitHub(t)
+	const tag = "v0.24.0"
+	f.onCreate = func() {
+		f.onCreate = nil
+		f.putRelease(1, tag, true, "other run")
+		f.unlisted = map[int64]bool{1: true}
+	}
+	if err := publisher(c, tag, linuxWindowsDist(t, tag, " bytes"), true).Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var mine int
+	for _, r := range f.releases {
+		if r.TagName == tag {
+			mine++
+		}
+	}
+	if mine != 2 || f.releases[1] == nil || f.published[tag].Body != "- notes for v0.24.0" {
+		t.Errorf("%d releases for the tag, the other run's kept %v, published %+v", mine, f.releases[1] != nil, f.published[tag])
+	}
+}
+
 // A version published after a greater one is not marked latest, so clients
 // keep being offered the greater one.
 func TestLatestOnlyForTheGreatestVersion(t *testing.T) {

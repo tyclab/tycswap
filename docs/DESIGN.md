@@ -10370,7 +10370,8 @@ tagged it finishes it, rerun by Retry when a job found no runner. A rerun
 lacks and changes nothing else: no second tag, no second upload, the notes of
 a published release untouched (`TestRerunOfAFinishedReleaseChangesNothing`).
 Two runs creating the release at once keep the older and delete the other's
-draft.
+draft, when the list after the create shows the other's; it may not yet
+(A121), so `publish` and `attach-darwin` never run at once for one tag.
 
 **By hand.** A pushed `v*` tag runs as before and leaves a draft, with the tag
 commit's section as its notes when it has one. `workflow_dispatch` with a tag
@@ -10655,6 +10656,23 @@ commit adds over the newest tag reachable from its first parent
 (`release.NotesAt`), and with none the draft keeps the placeholder.
 `releasectl decide` still accepts `--ci-run` and `--ci-attempt`, and `tag`
 `--tag`, so a rerun of a Release run started before A121 finds its flags.
+
+**One publish of a tag at a time.** `publish` and `attach-darwin` both run
+`releasectl publish`, which finds the tag's release or creates its draft
+(`Publisher.ensure`). On v0.25.8 the two ran at the same moment, each created
+a draft, and neither saw the other's in the list it read right after its own
+create, so `ensure`'s rule that the younger draft is deleted never fired: the
+published release had Linux, Windows and a three-line `SHA256SUMS`, and the
+macOS builds sat in a second, draft release with the same tag. Both jobs now
+share one job-level `concurrency` group keyed on the tag
+(`release-publish-<tag>`, `cancel-in-progress: false`), across every run, so
+the second finds the first one's release. A pending job that a third one in
+the group displaces is cancelled before its first step, which is the
+no-runner signature: the Retry workflow reruns it, and the rerun finds the
+release. `ensure`'s clean-up stays as the second line of defence; it cannot
+be relied on alone, because GitHub's release list can lag a create
+(`TestTwoRunsCreatingTheReleaseSplitWhenTheListLags` shows the split when
+the list after the create shows only the run's own draft).
 
 **Holding a release back** is not in the normal path, and nothing needs it:
 a change that must not ship is reverted by the next pull request, whose
