@@ -582,43 +582,30 @@ func TestHarvestFableLive(t *testing.T) {
 
 // A10 ------------------------------------------------------------------------
 
+// A127: the mismatch line is never a warning, beside the Fable store's
+// account or not (A100 lowered it for that account alone).
 func TestDefaultResolverBesideTheFableStore(t *testing.T) {
-	mythosLogin := func(creds string) func(*testing.T, *Store) {
-		return func(t *testing.T, s *Store) {
-			dir := MythosLoginDir(s.BackupDir(), "two@example.com", "org-2")
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(creds), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	for _, tc := range []struct {
-		name    string
-		prepare func(*testing.T, *Store)
-		warning bool
+		name  string
+		fable bool
 	}{
-		{"config names the Fable store's live account", func(t *testing.T, s *Store) {
-			putFableLogin(t, s, "2", fableCreds("at-f2", "rt-f2"))
-			putFableLive(t, s, withMCP(fableCreds("at-f2", "rt-f2")))
-		}, false},
-		// A127: a session on the account's own Mythos login writes it too, marked or not.
-		{"config names an account with a signed-in Mythos login", mythosLogin(fableCreds("at-m2", "rt-m2")), false},
-		{"config names an account whose Mythos login is not signed in", mythosLogin(`{}`), true},
-		{"no Fable store", func(*testing.T, *Store) {}, true},
+		{"config names the Fable store's live account", true},
+		{"no Fable store", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := fableFixture(t)
 			writeLiveIdentity(t, s, "two@example.com", "org-2")
-			tc.prepare(t, s)
+			if tc.fable {
+				putFableLogin(t, s, "2", fableCreds("at-f2", "rt-f2"))
+				putFableLive(t, s, withMCP(fableCreds("at-f2", "rt-f2")))
+			}
 			got := resolveLive(t, s)
 			if want := (LiveSlot{Slot: "1", ConfigSlot: "2", ByLineage: true, Source: SourceBackup}); got != want {
 				t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
 			}
 			raw, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
-			if warned := strings.Contains(string(raw), "WARNING") && strings.Contains(string(raw), "live config names slot 2"); warned != tc.warning {
-				t.Fatalf("WARNING logged = %v, want %v:\n%s", warned, tc.warning, raw)
+			if strings.Contains(string(raw), "WARNING") && strings.Contains(string(raw), "live config names slot 2") {
+				t.Fatalf("the mismatch line was logged as a warning:\n%s", raw)
 			}
 		})
 	}

@@ -5950,10 +5950,9 @@ line `<change> by <actor>` beside the change's own line.
 - **A config naming another account.** When `~/.claude.json` names one
   account and the default login's credential is another's, the resolver
   takes the credential's and logs `live config names slot <x> (…) but the
-  live credential is slot <y>'s (by …); using <y>` once per process: at
-  DEBUG when the config names the Fable store's live account or an account
-  with a signed-in Mythos login, whose sessions write their account there,
-  else as a warning (DESIGN A68, A100, A127).
+  live credential is slot <y>'s (by …); using <y>` at DEBUG, once per
+  process. Sessions on the Fable store or a Mythos login write their account
+  there, and the credential decides in every case (DESIGN A68, A127).
 - **Stale temporary files.** Every scheduled real round (`auto --once`, on
   or off, the `auto` loop and the app's hosted loop; never a dry run or a
   status line's tick) removes the `.atomic-*.tmp` files older than an hour
