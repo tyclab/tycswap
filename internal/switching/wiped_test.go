@@ -49,3 +49,25 @@ func TestSwitchOffAWipedLastInstallStashesNothing(t *testing.T) {
 		t.Errorf("the wiped login was taken for the last install:\n%s", log)
 	}
 }
+
+// A wiped Fable store login the last install attributes leaves that
+// account's Fable login as stored, unstashed, and says so.
+func TestSwitchFableOffAWipedLoginKeepsTheFableLogin(t *testing.T) {
+	s, f := fableSwitchStore(t)
+	if _, err := SwitchFable(f, "1", FableSwitchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	setFableLive(t, s, wipedLogin)
+	if _, err := SwitchFable(f, "2", FableSwitchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.ReadAccountCredentials("1", fableEmails["1"]); got != planCreds("at-f1", "rt-f1", "max") {
+		t.Errorf("Account-1's Fable login = %s, want it unchanged", got)
+	}
+	if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 0 {
+		t.Errorf("unclaimed %v, want none", rows)
+	}
+	if log := logText(t, s); !strings.Contains(log, "account 1's Fable login was kept") {
+		t.Errorf("no warning about the kept Fable login:\n%s", log)
+	}
+}

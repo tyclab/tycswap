@@ -10972,10 +10972,15 @@ that could not take it). `start --check` exits 0 and may show the lock's
 message in the status line. `start` launches on the current login and says
 `could not refresh the login; check the connection or renew it with tycswap
 add --login` or `Could not select a start login: …; continuing`; a parked or
-recovered Fable start exits 1 without launching. The active login's usage
-fetch with no Claude Code running refreshes before it takes the lock and
-discards the successor when the lock stays busy for 10 s; that path is
-unchanged here.
+recovered Fable start exits 1 without launching, as on any lock it cannot
+take: it refuses rather than launch on an unverified login. No code changed
+for these: the only new long holder is a sent refresh whose reply the network
+holds back, which the tick's `(network?)` and `start`'s `check the connection`
+name, and the lock's own message says another instance holds it. The active
+login's usage fetch with no Claude Code running refreshes before it takes the
+lock and discards the successor when the lock stays busy for 10 s; that path
+is unchanged here, and such a hold needs a reply the network holds back while
+this fetch's own reply came through.
 
 ## A130. A login whose tokens Claude Code wiped never replaces a stored login
 
