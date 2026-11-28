@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -141,8 +142,8 @@ func waitPersistLockFor(t *testing.T, d time.Duration) {
 func TestFetchActiveUsageStoresTheSuccessorAfterALongLockHold(t *testing.T) {
 	s, creds := refreshingStore(t, nil)
 	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
-	if persistLockWait != oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
-		t.Fatalf("persistLockWait = %v, want the send and reply bounds", persistLockWait)
+	if want := store.GuardedRefreshHold(cclock.DefaultTimeoutS, oauth.DefaultRefreshSendTimeout, oauth.DefaultRefreshReplyTimeout); persistLockWait != want {
+		t.Fatalf("persistLockWait = %v, want a guarded refresh's whole hold, %v", persistLockWait, want)
 	}
 	waitPersistLockFor(t, 5*time.Second)
 	release := testutil.HoldLock(t, s.LockFile)

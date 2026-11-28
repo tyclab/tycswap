@@ -11091,11 +11091,18 @@ send bound and the reply wait are tested over HTTP/1.1 and over HTTP/2, the
 token endpoint's protocol; `WroteRequest` fires on both.
 
 A successor that was already received is stored under the locks; that wait
-is as long as a refresh can hold the store lock, the send bound plus the
-reply bound (`persistLockWait` in `reporting`, from the two constants). The
-active login's refresh without a running client is sent before it takes the
-locks, so a guarded refresh of another account that awaits its reply no
-longer makes it drop the successor after 10 s.
+is as long as one guarded refresh can hold the store lock: the Fable store's
+live refresh waits inside it for Claude Code's two locks of that store
+(`cclock.DefaultTimeoutS` each), then its send and reply bounds run, 53 s in
+all (`store.GuardedRefreshHold`, `persistLockWait` in `reporting`, from the
+existing constants). Until 2026-11-28 the wait was the send and reply bounds
+alone, 35 s, and a successor received while such a refresh still waited for
+a Claude Code lock was discarded with its refresh token spent. The active
+login's refresh without a running client is sent before it takes the locks,
+so a guarded refresh of another account that awaits its reply no longer
+makes it drop the successor after 10 s. Each Claude Code lock wait can run
+one backoff step (at most 0.5 s) past its bound, which the wait does not
+cover.
 
 The other callers pass `context.Background()` and so get the full reply wait:
 the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the

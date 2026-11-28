@@ -243,8 +243,8 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 // config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
 // persistLockWait is how long storing a successor already received waits for
-// the store lock: as long as a refresh can hold it (DESIGN A129).
-var persistLockWait = oauth.DefaultRefreshSendTimeout + oauth.DefaultRefreshReplyTimeout
+// the store lock: as long as a guarded refresh can hold it (DESIGN A129).
+var persistLockWait = store.GuardedRefreshHold(cclock.DefaultTimeoutS, oauth.DefaultRefreshSendTimeout, oauth.DefaultRefreshReplyTimeout)
 
 func withTripleLock(s *store.Store, fn func() error) error {
 	return withTripleLockWaiting(s, 0, fn)
