@@ -10919,6 +10919,66 @@ move is deferred, that session's requests go out on the own login's account
 until its status line or the tick moves it; no other session is affected.
 Sessions on Windows and macOS have no link.
 
+## A127. The account-mismatch line is logged at DEBUG
+
+**Why.** A68's line `live config names slot X (…) but the live credential is
+slot Y's (by …); using Y` is deduplicated within one process only, and every
+tick, status line and hook is a new process. A100 lowered it to DEBUG when
+the config names the Fable store's live account. Since A109 a session can run
+on an account's own Mythos login, and since A125 any start can come up on one;
+such a client writes that account into the shared `~/.claude.json` as a Fable
+session does. With one Mythos session open a box logged the line 102 times in
+35 minutes.
+
+**The rule.** The line is logged at DEBUG in every case, still once per
+process and pair. The resolver takes the slot from the credential whichever
+client wrote the config: a Fable session, a Mythos session, or a default-login
+client that wrote its old account back after a switch (A68). The line asks
+nothing of the user, so a warning was noise; on a box where every account has
+a Mythos login a second special case beside A100's would have left no
+mismatch at WARNING anyway. This supersedes A100 in that point:
+`configNamesFableLive` and its special case are gone.
+
+**Limits.** A68's case is no longer visible at the default log level; the
+resolution is unchanged, and `--debug` shows the line.
+
+## A128. The tick removes the temp files of killed writes
+
+**Why.** `atomicfile` writes through a temp file `.atomic-*.tmp` beside the
+target and removes it on any error, but a process killed between create and
+rename (a status line the client times out, a SIGKILL) leaves it. One box
+held 15 such files from three weeks in the data root and its `cache/`, mode
+0600, copies of state and config files.
+
+**The rule.** `atomicfile.SweepStale(root, olderThan, now)` resolves `root`
+once (a data root that is itself a symlink is swept), walks it with
+`filepath.WalkDir`, which follows no symlink below it (`links/` points at
+login directories outside the root), and removes the regular files named like
+`.atomic-*.tmp` whose mtime is older than `olderThan`; a file it cannot read
+or remove is skipped. `retireProfiles`, the round every scheduled real tick
+runs (`auto --once` on or off, the `auto` loop and the app's hosted loop;
+never a dry run or a status line's tick), calls it on the data root
+(`BackupDir`, which holds `tycswap.log`) with `staleTempAge`, one hour, and
+the store's clock, and logs `Removed N stale temporary files` at INFO when N
+is above zero. A write takes milliseconds, so an hour-old temp file has no
+writer; a frozen writer that resumes after its temp was swept gets the
+rename's error back from `Write`, as for any failed write. The walk starts at
+the data root only, never at the home directory or `~/.claude`; the profile
+and login directories inside the data root are walked, and there too only
+`atomicfile`'s name is removed.
+
+**Limits.** Only `atomicfile`'s name is swept: nothing else uses it. Other
+temp names can leak the same way and are left as they are. Slot credentials
+are not written through `atomicfile`: a killed slot write leaves a `*.tmp` of
+`credstore` in `credentials/` or `credentials-fable/`, inside the swept root
+and outside the swept name; the box that held the 15 `.atomic` files had no
+such leftover, so it has no measured case. The others are the `*.tmp` of
+`ccfile` and `switching` (in the home and Claude config directory),
+`.settings-*.tmp`, `.tycswap-*.tmp`, `.tycswap-codex-*.tmp`,
+`.tycswap-copy-*` and `.tycswap-upgrade-*`; `.tycswap-migrate-*.tmp` and
+`login.*` have their own cleanups. A temp file outside the data root is never
+removed.
+
 ## A129. A refresh waits for the reply once its request is written
 
 **Why.** A refresh grant is single-use: once the token endpoint processed the

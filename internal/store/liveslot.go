@@ -32,11 +32,11 @@ const (
 	SourceLastInstall = "last-install"
 )
 
-// lineageMemo is shared by a Store and its scoped clones, so one process warns
-// once per pair and asks the profile endpoint once per live fingerprint.
+// lineageMemo is shared by a Store and its scoped clones, so one process logs
+// a mismatch once per pair and asks the profile endpoint once per live fingerprint.
 type lineageMemo struct {
 	mu     sync.Mutex
-	warned map[[2]string]bool
+	logged map[[2]string]bool
 	asked  map[string]profileAnswer
 }
 
@@ -207,7 +207,7 @@ func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, defaultLo
 	}
 	if ls.Slot != ls.ConfigSlot {
 		ls.ByLineage = true
-		s.warnLineage(ls, email, orgUUID)
+		s.logLineage(ls, email, orgUUID)
 	}
 	return ls
 }
@@ -419,44 +419,26 @@ func (m *lineageMemo) remember(fp string, id *oauth.Identity, at time.Time) {
 	m.asked[fp] = profileAnswer{id: id, done: true, at: at}
 }
 
-// warnLineage logs at DEBUG when the config names the Fable store's live
-// account: Fable sessions write theirs to the shared ~/.claude.json, so each
-// timer tick would warn (DESIGN A100).
-func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
+// logLineage logs the mismatch at DEBUG: the credential decides the slot in
+// every case, and sessions on the Fable store or a Mythos login write their
+// account to the shared ~/.claude.json, so a warning would repeat on every
+// tick with nothing to act on (DESIGN A127).
+func (s *Store) logLineage(ls LiveSlot, email, orgUUID string) {
 	if s.Log == nil {
 		return
-	}
-	logf := s.Log.Warningf
-	if s.configNamesFableLive(ls.ConfigSlot) {
-		logf = s.Log.Debugf
 	}
 	if m := s.lineage; m != nil {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		pair := [2]string{ls.ConfigSlot, ls.Slot}
-		if m.warned[pair] {
+		if m.logged[pair] {
 			return
 		}
-		if m.warned == nil {
-			m.warned = map[[2]string]bool{}
+		if m.logged == nil {
+			m.logged = map[[2]string]bool{}
 		}
-		m.warned[pair] = true
+		m.logged[pair] = true
 	}
-	logf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
+	s.Log.Debugf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
 		ls.ConfigSlot, email, orgUUID, ls.Slot, ls.Source, ls.Slot)
-}
-
-// configNamesFableLive reports whether slot is the Fable store's live
-// account, by backup or chain only.
-func (s *Store) configNamesFableLive(slot string) bool {
-	f := s.fableScope()
-	if f == nil || slot == "" {
-		return false
-	}
-	live, _, err := f.Creds.ReadActive()
-	if err != nil || live == "" {
-		return false
-	}
-	data, _ := f.ReadSequence()
-	return f.fableLiveSlot(data, live, false).Slot == slot
 }

@@ -22,6 +22,9 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
+// tempPattern names the temp file a write renames into place.
+const tempPattern = ".atomic-*.tmp"
+
 // Opts controls the file and directory permission bits. A zero value uses the
 // defaults 0600 (file) and 0700 (dir). Both are ignored on Windows.
 type Opts struct {
@@ -56,7 +59,7 @@ func Write(path string, data []byte, o Opts) error {
 		_ = os.Chmod(dir, o.dirMode())
 	}
 
-	tmp, err := os.CreateTemp(dir, ".atomic-*.tmp")
+	tmp, err := os.CreateTemp(dir, tempPattern)
 	if err != nil {
 		return err
 	}
@@ -90,6 +93,30 @@ func Write(path string, data []byte, o Opts) error {
 	SyncDir(filepath.Dir(path))
 	committed = true
 	return nil
+}
+
+// SweepStale removes what writes killed before their rename left under root:
+// regular files named like tempPattern whose mtime is older than olderThan.
+// It follows no symlink below root, skips what it cannot read or remove, and
+// returns how many files it removed (DESIGN A128).
+func SweepStale(root string, olderThan time.Duration, now time.Time) int {
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	removed := 0
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return nil
+		}
+		if match, _ := filepath.Match(tempPattern, d.Name()); !match {
+			return nil
+		}
+		if info, err := d.Info(); err == nil && now.Sub(info.ModTime()) > olderThan && os.Remove(p) == nil {
+			removed++
+		}
+		return nil
+	})
+	return removed
 }
 
 // marshalIndent2 renders v the way Python's json.dumps(v, indent=2) does: a
@@ -141,7 +168,7 @@ func WriteJSONValidated(path string, v any, o Opts) error {
 		_ = os.Chmod(dir, o.dirMode())
 	}
 
-	tmp, err := os.CreateTemp(dir, ".atomic-*.tmp")
+	tmp, err := os.CreateTemp(dir, tempPattern)
 	if err != nil {
 		return err
 	}
