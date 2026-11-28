@@ -2,6 +2,14 @@
 
 ## Since v0.24.1
 
+- **Fixed:** `tycswap add --slot` and `add-token --slot` onto the account
+  the Fable store runs on, and `remove` of that account, no longer turn the
+  store off and then refuse because a session runs on an account they would
+  delete: they refuse first and change nothing. An `add --slot` that moves
+  an account from another slot onto an occupied one, refused because a
+  session runs on the account it moves, no longer deletes the account it was
+  to overwrite first. The log again records `Emptied the Fable store by
+  hand` when one of these commands empties the store (DESIGN A130).
 - **Fixed:** `tycswap add --slot` (and `add-token --slot`) onto the
   account the Fable store runs on no longer turns that store off when the
   add is then refused, for example because Claude Code cleared the live
