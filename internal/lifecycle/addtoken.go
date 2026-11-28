@@ -138,12 +138,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 	if err != nil || cancelled {
 		return err
 	}
-	if err := emptyFableBeforeDisplacing(s, slotPtr, confirmEmail, ""); err != nil {
-		return err
-	}
 
 	var renumbered map[string]string
-	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
+	if err := withRosterForDisplacing(s, slotPtr, confirmEmail, "", func(data *store.SequenceData, emptyFable func(string) error) error {
 		// Email defaulting (§6.2): note this may assign slotPtr for the
 		// placeholder, from the roster this call commits.
 		if emailVal == "" {
@@ -202,6 +199,11 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		if displaceSlot != nil {
+			if err := emptyFable(displaceSlot.num); err != nil {
+				return err
+			}
+		}
 		displaceFable, followFable, err := reslotFableLogins(s, data, displaceSlot, migrateFrom, accountNum, emailVal)
 		if err != nil {
 			return err

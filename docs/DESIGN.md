@@ -11181,8 +11181,15 @@ key. Where a live login would be written into a slot it is checked:
   held `unresolved` before.
 - `add` of the live login refuses it with a validation error that asks for a
   new sign-in (`tycswap add --login`), before it asks to overwrite a slot or
-  changes anything: until 2026-11-28 the refusal came after the Fable store's
-  live login of the displaced account had been emptied.
+  changes anything. Under the store lock, after the question, the login is
+  read again and refused there if Claude Code wiped it meanwhile. An add
+  `--slot` (and `add-token --slot`) onto the Fable store's account empties
+  the store only after that read and every other refusal, in the same lock
+  hold: such an add runs under the Fable state lock and the Fable store's
+  locks (`withRosterForDisplacing`, `switching.EmptyFableWithin`), so a
+  refused add leaves the Fable store as it was. Until 2026-11-28 the store
+  was emptied before the add took the lock, first ahead of the refusal and
+  then between the early refusal and the read under the lock.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.

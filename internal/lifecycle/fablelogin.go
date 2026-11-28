@@ -11,10 +11,15 @@ import (
 )
 
 // EmptyFableStore turns the Fable store off before its live account is
-// removed. core sets it to the switch by hand's EmptyFable, which also holds
-// the Fable state lock; a test replaces it.
-var EmptyFableStore = func(s *store.Store) error {
-	_, err := switching.EmptyFable(s)
+// removed; a test replaces it.
+var EmptyFableStore = func(s *store.Store) error { return EmptyFableStoreWithin(s, nil) }
+
+// EmptyFableStoreWithin runs fn under the Fable store's locks, the store lock
+// among them, and fn's empty empties the store in that hold
+// (switching.EmptyFableWithin). core sets it to the switch by hand's, which
+// also holds the Fable state lock; a test replaces it.
+var EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
+	_, err := switching.EmptyFableWithin(s, fn)
 	return err
 }
 
@@ -229,17 +234,41 @@ func deleteFableLogin(s *store.Store, num, email string) error {
 	return f.Creds.DeleteBackupStrict(num, email)
 }
 
-// emptyFableBeforeDisplacing empties the Fable store before add --slot puts
-// another identity in the slot it is on, as remove does; outside the lock.
-func emptyFableBeforeDisplacing(s *store.Store, slot *int, email, orgUUID string) error {
-	if slot == nil || fableLogins(s) == nil {
-		return nil
+// withRosterForDisplacing runs commit under the store lock on the locked
+// roster. When add --slot is to put another identity into the slot of the
+// Fable store's account, the Fable store's locks are held as well and
+// commit's emptyFable(num) empties the store in that hold if num still owns
+// its login: commit calls it once its last refusal is behind it, so a refused
+// add leaves the store as it was (DESIGN A130). Otherwise emptyFable does
+// nothing and reslotFableLogins refuses a slot the store took meanwhile.
+func withRosterForDisplacing(s *store.Store, slot *int, email, orgUUID string, commit func(data *store.SequenceData, emptyFable func(num string) error) error) error {
+	if !displacesFableOwner(s, slot, email, orgUUID) {
+		return s.WithRosterLocked(func(data *store.SequenceData) error {
+			return commit(data, func(string) error { return nil })
+		})
+	}
+	return EmptyFableStoreWithin(s, func(empty func() error) error {
+		data, err := s.MigratedSequenceForUpdateLocked()
+		if err != nil {
+			return err
+		}
+		return commit(data, func(num string) error {
+			if f := fableLogins(s); f == nil || !f.HasLiveLogin() || fableOwner(f) != num {
+				return nil
+			}
+			return empty()
+		})
+	})
+}
+
+func displacesFableOwner(s *store.Store, slot *int, email, orgUUID string) bool {
+	f := fableLogins(s)
+	if slot == nil || f == nil || !f.HasLiveLogin() {
+		return false
 	}
 	data, _ := s.ReadSequence()
-	if slotOccupant(data, strconv.Itoa(*slot), email, orgUUID) == nil {
-		return nil
-	}
-	return emptyFableBefore(s, strconv.Itoa(*slot))
+	num := strconv.Itoa(*slot)
+	return slotOccupant(data, num, email, orgUUID) != nil && fableOwner(f) == num
 }
 
 // reslotFableLogins gives accountNum the Fable login of the identity add puts

@@ -890,10 +890,11 @@ overwrites its record.
 A Fable login stays with the account it was signed in as (DESIGN A101): an
 account `--slot` moves takes its Fable login to the new slot (and the Fable
 store's chain record when the store is on it); an account `--slot` overwrites
-loses its Fable login, the Fable store emptied first when it is on that
-account, as for `remove`; a new account takes none, so a Fable login left
-under its slot and email goes. `add` without `--login` and `add-token
---slot` do the same.
+loses its Fable login, the Fable store emptied when it is on that
+account, as for `remove`, but only once the new login was read and nothing
+refused the add, so a refused add leaves the Fable store as it was; a new
+account takes none, so a Fable login left under its slot and email goes.
+`add` without `--login` and `add-token --slot` do the same.
 A login as the live account itself is the exception: `add` then activates the
 new login through the same path as `tycswap switch <n> --force`, which keeps a
 safety copy of the replaced credential, so the live store and `list` hold the

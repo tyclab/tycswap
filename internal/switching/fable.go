@@ -143,10 +143,23 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 // goes back into its account's Fable login, the store keeps its seat-wide
 // keys only, or no file when it has none, and its chain record goes.
 func EmptyFable(fable *store.Store) (map[string]any, error) {
-	return emptyFableWhen(fable, nil)
+	return emptyFableWithin(fable, nil, nil)
+}
+
+// EmptyFableWithin runs fn under the Fable store's locks, the store lock
+// among them. empty, called by fn at most once and only after fn has read
+// what it decides on, empties the store in that same hold (DESIGN A130).
+// With no live login fn runs under the store lock alone and empty does
+// nothing. A nil fn empties the store as EmptyFable does.
+func EmptyFableWithin(fable *store.Store, fn func(empty func() error) error) (map[string]any, error) {
+	return emptyFableWithin(fable, nil, fn)
 }
 
 func emptyFableWhen(fable *store.Store, check func(*store.SequenceData) error) (map[string]any, error) {
+	return emptyFableWithin(fable, check, nil)
+}
+
+func emptyFableWithin(fable *store.Store, check func(*store.SequenceData) error, fn func(empty func() error) error) (map[string]any, error) {
 	f, err := fable.ForFable()
 	if err != nil {
 		return nil, err
@@ -156,12 +169,16 @@ func emptyFableWhen(fable *store.Store, check func(*store.SequenceData) error) (
 		return nil, err
 	}
 	if live == "" {
-		return fableResult(false, nil, nil, "emptied"), nil
+		if fn != nil {
+			err = f.Lock.With(func() error { return fn(func() error { return nil }) })
+		}
+		return fableResult(false, nil, nil, "emptied"), err
 	}
 	data, _ := f.ReadSequence()
 	f.ResolveFableLiveSlot(data) // asks the profile endpoint, if at all, before the locks
 	var from map[string]any
-	err = f.WithFableLocks(func() error {
+	emptied := false
+	empty := func() error {
 		current, err := f.ReadSequence()
 		if err != nil {
 			return err
@@ -189,12 +206,19 @@ func emptyFableWhen(fable *store.Store, check func(*store.SequenceData) error) (
 		if err := f.Creds.ClearActive(); err != nil {
 			return err
 		}
-		return f.ForgetFableLive()
-	})
-	if err != nil {
+		if err := f.ForgetFableLive(); err != nil {
+			return err
+		}
+		emptied = true
+		return nil
+	}
+	if fn == nil {
+		fn = func(empty func() error) error { return empty() }
+	}
+	if err := f.WithFableLocks(func() error { return fn(empty) }); err != nil {
 		return nil, err
 	}
-	return fableResult(true, from, nil, "emptied"), nil
+	return fableResult(emptied, from, nil, "emptied"), nil
 }
 
 func fableTargetRefusal(f *store.Store, data *store.SequenceData, num string) error {
