@@ -199,6 +199,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		if err := refuseLiveSessions(s, data, displaceSlot, migrateFrom); err != nil {
+			return err
+		}
 		if displaceSlot != nil {
 			if err := emptyFable(displaceSlot.num); err != nil {
 				return err

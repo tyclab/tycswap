@@ -10,10 +10,6 @@ import (
 	"github.com/tyclab/tycswap/internal/switching"
 )
 
-// EmptyFableStore turns the Fable store off before its live account is
-// removed; a test replaces it.
-var EmptyFableStore = func(s *store.Store) error { return EmptyFableStoreWithin(s, nil) }
-
 // EmptyFableStoreWithin runs fn under the Fable store's locks, the store lock
 // among them, and fn's empty empties the store in that hold
 // (switching.EmptyFableWithin). core sets it to the switch by hand's, which
@@ -208,17 +204,11 @@ func fableOwnerOf(f *store.Store) store.LiveSlot {
 	return f.ResolveOwnerSlot(data)
 }
 
-// emptyFableBefore empties the Fable store when num owns its login, so a
-// removal never leaves the store on a login of an account that is gone.
-func emptyFableBefore(s *store.Store, num string) error {
+// ownsFableLogin reports whether num owns the Fable store's login, its last
+// install included.
+func ownsFableLogin(s *store.Store, num string) bool {
 	f, err := s.ForFable()
-	if err != nil || !f.HasLiveLogin() || fableOwner(f) != num {
-		return nil
-	}
-	if err := EmptyFableStore(s); err != nil {
-		return cerr.Config("Account-%s is the Fable store's account and emptying the store failed, so nothing was removed: %v", num, err)
-	}
-	return nil
+	return err == nil && f.HasLiveLogin() && fableOwner(f) == num
 }
 
 // deleteFableLogin removes num's Fable login and its .prev; the caller holds
@@ -234,15 +224,22 @@ func deleteFableLogin(s *store.Store, num, email string) error {
 	return f.Creds.DeleteBackupStrict(num, email)
 }
 
-// withRosterForDisplacing runs commit under the store lock on the locked
-// roster. When add --slot is to put another identity into the slot of the
-// Fable store's account, the Fable store's locks are held as well and
-// commit's emptyFable(num) empties the store in that hold if num still owns
-// its login: commit calls it once its last refusal is behind it, so a refused
-// add leaves the store as it was (DESIGN A130). Otherwise emptyFable does
-// nothing and reslotFableLogins refuses a slot the store took meanwhile.
+// withRosterForDisplacing is withRosterEmptyingFable for add --slot: the
+// Fable store's locks are held when the add is to put another identity into
+// the slot of the Fable store's account. Otherwise reslotFableLogins refuses
+// a slot the store took meanwhile.
 func withRosterForDisplacing(s *store.Store, slot *int, email, orgUUID string, commit func(data *store.SequenceData, emptyFable func(num string) error) error) error {
-	if !displacesFableOwner(s, slot, email, orgUUID) {
+	return withRosterEmptyingFable(s, displacesFableOwner(s, slot, email, orgUUID), commit)
+}
+
+// withRosterEmptyingFable runs commit under the store lock on the locked
+// roster. With hold the Fable store's locks are held as well and commit's
+// emptyFable(num) empties the store in that hold if num still owns its
+// login: commit calls it once its last refusal is behind it, so a refused
+// add or remove leaves the store as it was (DESIGN A130). Without hold
+// emptyFable does nothing.
+func withRosterEmptyingFable(s *store.Store, hold bool, commit func(data *store.SequenceData, emptyFable func(num string) error) error) error {
+	if !hold {
 		return s.WithRosterLocked(func(data *store.SequenceData) error {
 			return commit(data, func(string) error { return nil })
 		})
@@ -253,12 +250,31 @@ func withRosterForDisplacing(s *store.Store, slot *int, email, orgUUID string, c
 			return err
 		}
 		return commit(data, func(num string) error {
-			if f := fableLogins(s); f == nil || !f.HasLiveLogin() || fableOwner(f) != num {
+			if !ownsFableLogin(s, num) {
 				return nil
 			}
 			return empty()
 		})
 	})
+}
+
+// refuseLiveSessions gives the session refusal DeleteAccountFiles gives for
+// the slots an add deletes, the displaced one and the one the account moves
+// from, before the add changes anything (DESIGN A130).
+func refuseLiveSessions(s *store.Store, data *store.SequenceData, displaced *displaceInfo, migrateFrom string) error {
+	if displaced != nil {
+		if err := s.EnsureNoLiveSession(displaced.num, displaced.email, "the operation"); err != nil {
+			return err
+		}
+	}
+	if migrateFrom == "" {
+		return nil
+	}
+	email := ""
+	if rec, _ := recordAt(data, migrateFrom); rec != nil {
+		email = rec.str("email")
+	}
+	return s.EnsureNoLiveSession(migrateFrom, email, "the operation")
 }
 
 func displacesFableOwner(s *store.Store, slot *int, email, orgUUID string) bool {

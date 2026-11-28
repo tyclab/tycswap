@@ -191,6 +191,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		// Destructive cleanup is now safe (new account data is in memory). Each
 		// branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		if err := refuseLiveSessions(s, data, displaceSlot, migrateFrom); err != nil {
+			return err
+		}
 		if displaceSlot != nil {
 			if err := emptyFable(displaceSlot.num); err != nil {
 				return err

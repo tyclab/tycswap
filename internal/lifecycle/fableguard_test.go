@@ -15,7 +15,6 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
-	"github.com/tyclab/tycswap/internal/switching"
 )
 
 // The live default credential was rotated since its backup was written: it
@@ -183,17 +182,15 @@ func TestAddFableLoginRenewalWaitsForClaudeCodesRefreshLock(t *testing.T) {
 	}
 }
 
-func TestRemoveRefusesWhenTheFableStoreTookTheAccountAgain(t *testing.T) {
+// An emptying that leaves the Fable store on the account refuses the remove
+// before its Fable login is deleted.
+func TestRemoveRefusesWhenTheFableStoreStillHoldsTheAccount(t *testing.T) {
 	s := withFableLogins(t, "2")
-	prev := EmptyFableStore
-	EmptyFableStore = func(s *store.Store) error {
-		if err := prev(s); err != nil {
-			return err
-		}
-		_, err := switching.SwitchFable(s, "2", switching.FableSwitchOptions{})
-		return err
+	prev := EmptyFableStoreWithin
+	EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
+		return prev(s, func(func() error) error { return fn(func() error { return nil }) })
 	}
-	t.Cleanup(func() { EmptyFableStore = prev })
+	t.Cleanup(func() { EmptyFableStoreWithin = prev })
 	err := RemoveAccount(s, "2", true)
 	if want := "The Fable store took Account-2 again; nothing was removed. Retry the command."; err == nil || err.Error() != want {
 		t.Fatalf("RemoveAccount = %v, want %q", err, want)

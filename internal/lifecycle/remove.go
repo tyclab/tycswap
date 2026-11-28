@@ -79,9 +79,6 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 			return nil
 		}
 	}
-	if err := emptyFableBefore(s, accountNum); err != nil {
-		return err
-	}
 
 	// The commit span. An unbounded amount of time passed at the prompt with
 	// nothing yet destroyed, so the roster the deletion is applied to is read
@@ -91,8 +88,10 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 	// fallback: a file that has gone unparseable refuses while every backup is
 	// still intact, and a file the user deleted meanwhile (the refusal message's
 	// own second remedy) reads as the fresh roster it is, so this call cannot
-	// resurrect the records they discarded.
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
+	// resurrect the records they discarded. When the account owns the Fable
+	// store's login the span holds the Fable store's locks too and empties the
+	// store after the last refusal (DESIGN A130).
+	return withRosterEmptyingFable(s, ownsFableLogin(s, accountNum), func(data *store.SequenceData, emptyFable func(string) error) error {
 		rec, present := recordAt(data, accountNum)
 		if !present {
 			if moved := s.FindAccountSlot(data, email, org); moved != "" {
@@ -122,6 +121,9 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 		// net, but this is the refusal with the actionable message).
 		if err := s.EnsureNoLiveSession(accountNum, email, "--remove-account"); err != nil {
 			return err
+		}
+		if err := emptyFable(accountNum); err != nil {
+			return cerr.Config("Account-%s is the Fable store's account and emptying the store failed, so nothing was removed: %v", accountNum, err)
 		}
 		if err := deleteFableLogin(s, accountNum, email); err != nil {
 			return err

@@ -148,12 +148,16 @@ func TestRemovingTheFableStoresAccountEmptiesAnUnattributedLogin(t *testing.T) {
 
 func TestRemoveStopsWhenTheFableStoreCannotBeEmptied(t *testing.T) {
 	s := withFableLogins(t, "2")
-	prev := EmptyFableStore
-	EmptyFableStore = func(*store.Store) error { return errors.New("the store lock is held") }
-	t.Cleanup(func() { EmptyFableStore = prev })
+	prev := EmptyFableStoreWithin
+	EmptyFableStoreWithin = func(s *store.Store, fn func(empty func() error) error) error {
+		return prev(s, func(func() error) error {
+			return fn(func() error { return errors.New("the store could not be cleared") })
+		})
+	}
+	t.Cleanup(func() { EmptyFableStoreWithin = prev })
 	before := everyFile(t, s)
 	err := RemoveAccount(s, "2", true)
-	if err == nil || !strings.Contains(err.Error(), "the store lock is held") || !strings.Contains(err.Error(), "nothing was removed") {
+	if err == nil || !strings.Contains(err.Error(), "the store could not be cleared") || !strings.Contains(err.Error(), "nothing was removed") {
 		t.Fatalf("RemoveAccount = %v", err)
 	}
 	sameFiles(t, "the failed remove", before, everyFile(t, s))

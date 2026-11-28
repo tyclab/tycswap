@@ -1132,8 +1132,10 @@ Permanently removes a managed account: its `sequence.json` entry, stored
 config, and stored credentials. Prompts for confirmation on an interactive
 terminal (`[y/N]`); any answer other than `y` cancels. Its Fable login and
 that file's `.prev` go too (DESIGN A101). When the account is the Fable store's
-live one, the store is emptied first as by `switch --store fable --empty`; if
-that fails, nothing is removed and the error names why.
+live one, the store is emptied as by `switch --store fable --empty`, after
+every check that can refuse the remove, so a refused remove leaves the store
+on it; if emptying fails, nothing is removed and the error names why
+(DESIGN A130).
 
 ### Files
 

@@ -8264,10 +8264,9 @@ repaired: the store is usable again at once.
 - `remove` deletes the account's Fable login and its `.prev`. When the account
   owns the Fable store's login (`ResolveOwnerSlot`, before the roster lock: a
   rotated login nothing else names is its last install's, A100), the store is
-  emptied first by `core.EmptyFable` (under the Fable state lock); if that
-  fails, nothing is removed and the error is named. Under the roster lock a
-  store that took the account again meanwhile, by the same resolution,
-  refuses.
+  emptied in the roster lock's hold after its last refusal (A130); if that
+  fails, nothing is removed and the error is named. A store that took the
+  account after that resolution, by the same resolution, refuses.
 - `move` and `swap` carry the Fable login with its account in
   `credentials-fable/`: written under the new key, staged in
   `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
@@ -8288,8 +8287,8 @@ repaired: the store is usable again at once.
   as. `add` and `add-token` with `--slot N` follow it too (added after lane
   B's report): an account the add moves from its old slot to N takes its Fable
   login, and the chain record when the store is on it; an identity the add
-  displaces from N loses its Fable login, the store emptied first when it is
-  on N, as for `remove`; a new identity in N takes none, so a login left under
+  displaces from N loses its Fable login, the store emptied when it is on N,
+  as for `remove` (A130); a new identity in N takes none, so a login left under
   N's key goes; the identity already in N keeps its Fable login and `.prev`
   byte for byte (`add --slot N` of it renews its default login, which
   tycswap's own hints recommend). Each step runs beside the default side's:
@@ -11191,14 +11190,26 @@ key. Where a live login would be written into a slot it is checked:
 - `add` of the live login refuses it with a validation error that asks for a
   new sign-in (`tycswap add --login`), before it asks to overwrite a slot or
   changes anything. Under the store lock, after the question, the login is
-  read again and refused there if Claude Code wiped it meanwhile. An add
-  `--slot` (and `add-token --slot`) onto the Fable store's account empties
-  the store only after that read and every other refusal, in the same lock
-  hold: such an add runs under the Fable state lock and the Fable store's
-  locks (`withRosterForDisplacing`, `switching.EmptyFableWithin`), so a
-  refused add leaves the Fable store as it was. Until 2026-11-28 the store
-  was emptied before the add took the lock, first ahead of the refusal and
-  then between the early refusal and the read under the lock.
+  read again and refused there if Claude Code wiped it meanwhile.
+- An add `--slot` (and `add-token --slot`) onto the Fable store's account,
+  and `remove` of that account, empty the store in the lock hold that makes
+  the change, after every refusal: they run under the Fable state lock and
+  the Fable store's locks (`withRosterEmptyingFable`,
+  `switching.EmptyFableWithin`). Before it empties, an add has read the new
+  login and refused a running session on the displaced account and on the
+  account it moves from (`refuseLiveSessions`, the refusal
+  `DeleteAccountFiles` gives), and `remove` has checked the slot's identity
+  and its session again. A refused add or remove leaves the Fable store as
+  it was. What can still fail after the emptying, the store then left
+  empty: deleting the displaced or removed account's backups, config,
+  session profile and Fable login, writing the new login's backups and the
+  roster (write errors), and deleting the account's Mythos login, which waits
+  up to 9 s for each of that login's two Claude Code locks and fails while a
+  session refreshing on it holds one longer. Until 2026-11-28 the add emptied the store
+  before it took the lock, then before the read under the lock, then before
+  the session refusals (for the account moving in, after the displaced
+  account was deleted); `remove` emptied it before its own lock and then
+  refused a session that started during its question.
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
   the last install's account) is not written into the Fable login, and with
   no account named for it it is not stashed either; a warning is logged.
