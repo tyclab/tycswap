@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -32,6 +33,8 @@ func TestReceivedSuccessorOutwaitsAGuardedRefreshWithNestedLocks(t *testing.T) {
 	)
 	s, active := refreshingStore(t, nil)
 	writeSequenceRaw(t, s, `{"activeAccountNumber":1,"sequence":[1,2],"accounts":{"1":{"email":"a@example.com"},"2":{"email":"b@example.com"}}}`)
+	// The Fable store is file-based; macOS refuses it, so the store is told it runs on Linux.
+	s.Platform = platform.Linux
 	f, err := s.ForFable()
 	if err != nil {
 		t.Fatal(err)
