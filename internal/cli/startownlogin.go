@@ -15,32 +15,32 @@ import (
 
 // ownStartLogin is the login of its own a linked start comes up on: the ready
 // Mythos login of a start login, one with room by start's ranking first, else
-// the first in sequence order. "" when no start login has one; enrolled then
-// says whether one sign-in would give a start login one. It reads files only;
-// s is the default store.
-func ownStartLogin(s *store.Store) (dir, num string, enrolled bool) {
+// the first in sequence order. "" when no start login has one; hint then
+// names what gives an enrolled start login one, "" without any (DESIGN
+// A126). It reads files only; s is the default store.
+func ownStartLogin(s *store.Store) (dir, num, hint string) {
 	view := s.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
 	data, err := view.SequenceForUpdate()
 	if err != nil {
-		return "", "", false
+		return "", "", ""
 	}
 	owns, enrolled := view.OwnStartLogins(data)
 	if len(owns) == 0 {
-		return "", "", enrolled
+		return "", "", reporting.OwnStartLoginHint(view, data, enrolled)
 	}
 	set, err := loadStartSettings(view.BackupDir())
 	if err != nil {
-		return "", "", false
+		return "", "", ""
 	}
 	snap := autoswitch.StartSnapshot{Settings: set, Entries: (&core.Switcher{Store: view}).UsageEntriesByAccount(map[string]bool{})}
 	now := view.Clk.Now()
 	for _, own := range owns {
 		if autoswitch.StartLoginHasRoom(snap, own.Num, now) {
-			return own.Dir, own.Num, true
+			return own.Dir, own.Num, ""
 		}
 	}
-	return owns[0].Dir, owns[0].Num, true
+	return owns[0].Dir, owns[0].Num, ""
 }
 
 func ownLoginNotice(num string) string {
@@ -49,13 +49,13 @@ func ownLoginNotice(num string) string {
 
 // ownLoginMissing is the rest of start's notice where it would have come up
 // on an own login and a start login lost its own: the selection switches, or
-// holds, login for every session on it (DESIGN A126).
-func ownLoginMissing(login string, holds bool) string {
+// holds, login for every session on it, and hint what gives one back (A126).
+func ownLoginMissing(login string, holds bool, hint string) string {
 	verb := "switches"
 	if holds {
 		verb = "holds"
 	}
-	return "; no start login has a Mythos login of its own, so this start " + verb + " " + login + " for every session on it. " + reporting.OwnStartLoginHint
+	return "; no start login has a Mythos login of its own, so this start " + verb + " " + login + " for every session on it. " + hint
 }
 
 // ownLoginInstead is the own login a linked start of family comes up on
@@ -91,10 +91,10 @@ func ownLoginInstead(family string, stderr io.Writer) string {
 	case family == mythosFamily:
 		why = "Account-" + snap.Current + " is not marked for Mythos"
 	}
-	dir, num, enrolled := ownStartLogin(sw.Store)
+	dir, num, hint := ownStartLogin(sw.Store)
 	if dir == "" {
-		if enrolled {
-			reportStartSelection(sw, stderr, why+ownLoginMissing("the default login", snap.CurrentMarked))
+		if hint != "" {
+			reportStartSelection(sw, stderr, why+ownLoginMissing("the default login", snap.CurrentMarked, hint))
 		}
 		return ""
 	}

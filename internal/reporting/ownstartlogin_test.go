@@ -14,7 +14,7 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-const noOwnStartLoginWarning = "No start login has a Mythos login of its own, so tycswap start switches or holds the default login or the Fable store for every session on it. Sign one in with tycswap add --login --lineage mythos --slot N."
+const noOwnStartLoginWarning = "No start login has a Mythos login of its own, so tycswap start switches or holds the default login or the Fable store for every session on it. Give Account-2 one with "
 
 // ownStartLoginStore: Account-1 live; Account-2 with the start mark when
 // marked, the Mythos mark when mythos, and a signed-in Mythos login of its own
@@ -58,15 +58,22 @@ func ownStartLoginStore(t *testing.T, marked, mythos, enabled, own bool) *store.
 
 // The warning shows in status and list, text and JSON, while auto-switch is
 // on, starts get links of their own (Linux and WSL), a start login carries the
-// Mythos mark and none has a ready Mythos login; else nowhere.
+// Mythos mark or login and none has a ready Mythos login; else nowhere. The
+// warning names what gives Account-2 one back.
 func TestStatusAndListWarnWithoutAnOwnStartLogin(t *testing.T) {
-	for name, tc := range map[string]struct{ marked, mythos, enabled, own, warns bool }{
-		"marked, no own login": {true, true, true, false, runtime.GOOS == "linux"},
-		"an own login":         {true, true, true, true, false},
-		"no marks":             {false, true, true, false, false},
-		"selection off":        {true, true, false, false, false},
-		"never a Mythos login": {true, false, true, false, false},
+	for name, tc := range map[string]struct {
+		marked, mythos, enabled, own bool
+		hint                         string
+	}{
+		"marked, no own login": {true, true, true, false, "tycswap add --login --lineage mythos --slot 2."},
+		"Mythos mark removed":  {true, false, true, true, "tycswap mythos --allow 2."},
+		"an own login":         {true, true, true, true, ""},
+		"no marks":             {false, true, true, false, ""},
+		"selection off":        {true, true, false, false, ""},
+		"never a Mythos login": {true, false, true, false, ""},
 	} {
+		warns := tc.hint != "" && runtime.GOOS == "linux"
+		want := noOwnStartLoginWarning + tc.hint
 		t.Run(name, func(t *testing.T) {
 			s := ownStartLoginStore(t, tc.marked, tc.mythos, tc.enabled, tc.own)
 			var status, list bytes.Buffer
@@ -85,13 +92,13 @@ func TestStatusAndListWarnWithoutAnOwnStartLogin(t *testing.T) {
 				t.Fatalf("Account-2's Mythos login ready %v, want %v:\n%s", ready, tc.own, list.String())
 			}
 			for surface, text := range map[string]string{"status": status.String(), "list": list.String()} {
-				if got := strings.Count(text, noOwnStartLoginWarning); got != map[bool]int{true: 1}[tc.warns] {
+				if got := strings.Count(text, noOwnStartLoginWarning); got != map[bool]int{true: 1}[warns] || warns && !strings.Contains(text, want) {
 					t.Errorf("%s shows the warning %d times:\n%s", surface, got, text)
 				}
 			}
 			for surface, payload := range map[string]any{"status --json": statusJSON, "list --json": listJSON} {
 				got, present := payload.(map[string]any)["ownStartLoginWarning"]
-				if present != tc.warns || present && got != noOwnStartLoginWarning {
+				if present != warns || present && got != want {
 					t.Errorf("%s ownStartLoginWarning = %v (%v)", surface, got, present)
 				}
 			}

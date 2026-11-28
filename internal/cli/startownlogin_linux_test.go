@@ -192,24 +192,28 @@ func TestWhichOwnLoginAStartComesUpOn(t *testing.T) {
 // A start login that lost its own login (disabled, or signed out) leaves the
 // selection on the shared login as before, after one notice: why the start
 // would have come up on one, that this start switches or holds that login for
-// every session on it, and the sign-in that gives one back (DESIGN A126).
+// every session on it, and the commands that give one back (DESIGN A126).
 func TestStartWithoutAnOwnLoginSaysItMovesTheSharedLogin(t *testing.T) {
-	missing := func(login, verb string) string {
+	missing := func(login, verb, hint string) string {
 		return "; no start login has a Mythos login of its own, so this start " + verb + " " + login +
-			" for every session on it. Sign one in with tycswap add --login --lineage mythos --slot N.\n"
+			" for every session on it. Give Account-4 one with " + hint + ".\n"
 	}
-	for name, spoil := range map[string]func(*testing.T, *core.Switcher, string){
-		"disabled": func(t *testing.T, sw *core.Switcher, _ string) { setRecord(t, sw, "4", "disabled", true) },
-		"signed out": func(t *testing.T, _ *core.Switcher, dir string) {
+	for name, tc := range map[string]struct {
+		spoil func(*testing.T, *core.Switcher, string)
+		hint  string
+	}{
+		"disabled": {func(t *testing.T, sw *core.Switcher, _ string) { setRecord(t, sw, "4", "disabled", true) }, "tycswap enable 4"},
+		"signed out": {func(t *testing.T, _ *core.Switcher, dir string) {
 			if err := os.Remove(filepath.Join(dir, ".credentials.json")); err != nil {
 				t.Fatal(err)
 			}
-		},
+		}, "tycswap add --login --lineage mythos --slot 4"},
+		"unmarked for Mythos": {func(t *testing.T, sw *core.Switcher, _ string) { setRecord(t, sw, "4", "mythos", false) }, "tycswap mythos --allow 4"},
 	} {
 		t.Run(name+"/default login", func(t *testing.T) {
 			sw, rec := fableStoreOffStartLoginsWith(t, 20, "1")
-			spoil(t, sw, ownLoginOf(t, sw, "4"))
-			notice := "tycswap start: Account-3 is no start login" + missing("the default login", "switches")
+			tc.spoil(t, sw, ownLoginOf(t, sw, "4"))
+			notice := "tycswap start: Account-3 is no start login" + missing("the default login", "switches", tc.hint)
 			code, _, stderr := runCLI(t, []string{"start", "--", "claude", "--model", "opus"}, false, false)
 			if want := notice + "tycswap start: Switched to start login Account-1.\n"; code != 23 || stderr != want || !strings.Contains(defaultLive(t, sw), "at-d1") {
 				t.Fatalf("start: code=%d stderr=%q, want %q; default login %s", code, stderr, want, defaultLive(t, sw))
@@ -221,8 +225,8 @@ func TestStartWithoutAnOwnLoginSaysItMovesTheSharedLogin(t *testing.T) {
 		})
 		t.Run(name+"/Fable store", func(t *testing.T) {
 			sw, rec := fableStoreOffStartLoginsWith(t, 20, "1")
-			spoil(t, sw, ownLoginOf(t, sw, "4"))
-			want := "tycswap start: Fable store: Account-2 is no start login" + missing("the Fable store", "switches") +
+			tc.spoil(t, sw, ownLoginOf(t, sw, "4"))
+			want := "tycswap start: Fable store: Account-2 is no start login" + missing("the Fable store", "switches", tc.hint) +
 				"tycswap start: Fable store: Switched to start login Account-1, which is at its limit; auto-switch moves on once the session is up.\n"
 			code, _, stderr := runCLI(t, []string{"start", "--", "claude", "--model", "fable"}, false, false)
 			if code != 23 || !strings.HasPrefix(stderr, want) || !strings.Contains(storeLive(t, sw), "at-f1") {
@@ -235,7 +239,7 @@ func TestStartWithoutAnOwnLoginSaysItMovesTheSharedLogin(t *testing.T) {
 		sw, rec := fableStoreOffStartLoginsWith(t, 100, "1", "3")
 		ownLoginOf(t, sw, "4")
 		setRecord(t, sw, "4", "disabled", true)
-		want := "tycswap start: start login Account-3 is at its limit" + missing("the default login", "holds")
+		want := "tycswap start: start login Account-3 is at its limit" + missing("the default login", "holds", "tycswap enable 4")
 		code, _, stderr := runCLI(t, []string{"start", "--", "claude", "--model", "opus"}, false, false)
 		if code != 23 || stderr != want {
 			t.Fatalf("start: code=%d stderr=%q, want %q", code, stderr, want)

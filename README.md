@@ -679,11 +679,12 @@ for a session of any model, and the SessionStart hook moves the session to
 the login its model runs on. Without such a login, and with `--account ID`,
 the start selects as above (DESIGN A125). When a start login carries the
 Mythos mark or holds a Mythos login but none is ready (signed out, or the
-account disabled), the start says so first (`tycswap start: Account-9 is no
-start login; no start login has a Mythos login of its own, so this start
-switches the default login for every session on it. Sign one in with tycswap
-add --login --lineage mythos --slot N.`), and `status`, `list` and their
-`--json` carry the same warning while it holds (DESIGN A126).
+account disabled or unmarked for Mythos), the start says so first, with the
+commands that give one back (`tycswap start: Account-9 is no start login; no
+start login has a Mythos login of its own, so this start switches the default
+login for every session on it. Give Account-8 one with tycswap add --login
+--lineage mythos --slot 8.`), and `status`, `list`, their `--json` and the
+dashboard carry the same warning while it holds (DESIGN A126).
 
 Selection is best effort. Missing marks and an already-marked current login
 are silent. An unavailable target or store prints a clear error on stderr,

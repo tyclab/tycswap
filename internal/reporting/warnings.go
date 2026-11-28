@@ -13,23 +13,46 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// OwnStartLoginHint is how a start login gets a login of its own; start's
-// notice and the standing warning end with it (DESIGN A126).
-const OwnStartLoginHint = "Sign one in with tycswap add --login --lineage mythos --slot N."
+// OwnStartLoginHint names the commands that give an enrolled start login its
+// own login back, for the one that needs the fewest: enabling the account,
+// its Mythos mark, its Mythos sign-in. Start's notice and the standing
+// warning end with it (DESIGN A126). "" without an enrolled start login.
+func OwnStartLoginHint(s *store.Store, data *store.SequenceData, enrolled []string) string {
+	num, best := "", []string(nil)
+	for _, n := range enrolled {
+		var steps []string
+		if store.DisabledFrom(data, n) {
+			steps = append(steps, "tycswap enable "+n)
+		}
+		if !store.MythosFrom(data, n) {
+			steps = append(steps, "tycswap mythos --allow "+n)
+		}
+		if login, _ := s.MythosLogin(data, n); !login.SignedIn {
+			steps = append(steps, "tycswap add --login --lineage mythos --slot "+n)
+		}
+		if num == "" || len(steps) < len(best) {
+			num, best = n, steps
+		}
+	}
+	if num == "" {
+		return ""
+	}
+	return "Give Account-" + num + " one with " + strings.Join(best, ", then ") + "."
+}
 
 // OwnStartLoginWarning is the standing warning while a linked start would
 // switch or hold a shared login for want of a start login's own login: auto-
-// switch is on, a start gets a link of its own here, a start login carries the
-// Mythos mark or holds a Mythos login directory, and none has a ready Mythos
-// login (DESIGN A126). "" otherwise.
+// switch is on, a start gets a link of its own here, a start login is
+// enrolled, and none has a ready Mythos login (DESIGN A126). "" otherwise.
 func OwnStartLoginWarning(s *store.Store, data *store.SequenceData) string {
 	if !SessionLinksSupported() || data == nil {
 		return ""
 	}
-	if ready, enrolled := s.OwnStartLogins(data); !enrolled || len(ready) > 0 || !settings.Load(s.BackupDir()).Enabled {
+	ready, enrolled := s.OwnStartLogins(data)
+	if len(enrolled) == 0 || len(ready) > 0 || !settings.Load(s.BackupDir()).Enabled {
 		return ""
 	}
-	return "No start login has a Mythos login of its own, so tycswap start switches or holds the default login or the Fable store for every session on it. " + OwnStartLoginHint
+	return "No start login has a Mythos login of its own, so tycswap start switches or holds the default login or the Fable store for every session on it. " + OwnStartLoginHint(s, data, enrolled)
 }
 
 // duplicateAccountWarnings returns warnings for slots that provably authenticate

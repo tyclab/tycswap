@@ -338,11 +338,14 @@ On Linux and WSL, while auto-switch is on, a start login carries the Mythos
 mark or holds a Mythos login directory, and no start login has a ready Mythos
 login, `status` and `list` end their Fable and Mythos lines with the warning
 `No start login has a Mythos login of its own, so tycswap start switches or
-holds the default login or the Fable store for every session on it. Sign one
-in with tycswap add --login --lineage mythos --slot N.` in the same colour;
-their `--json` carry it as the top-level string `ownStartLoginWarning`, and
-the dashboard's state carries the same field, each present only while the
-warning holds (DESIGN A126).
+holds the default login or the Fable store for every session on it. Give
+Account-<n> one with <commands>.` in the same colour. The commands are those
+the start login that needs the fewest is missing, in this order: `tycswap
+enable <n>`, `tycswap mythos --allow <n>`, `tycswap add --login --lineage
+mythos --slot <n>`. Their `--json` carry it as the top-level string
+`ownStartLoginWarning`, and the dashboard's state carries the same field,
+each present only while the warning holds; the dashboard shows it above the
+accounts (DESIGN A126).
 
 ### Files
 
@@ -1742,10 +1745,10 @@ nothing there and asks no allocation question; the SessionStart hook places
 the session on the default login, the Fable store or a Mythos login by its
 model. With no such login ready the selection runs as described above
 (DESIGN A125). When a start login carries the Mythos mark or holds a Mythos
-login directory, so that one sign-in gives it one, the selection is preceded
-by `tycswap start: <reason>; no start login has a Mythos login of its own, so
-this start switches the default login for every session on it. Sign one in
-with tycswap add --login --lineage mythos --slot N.`, with `holds` for a start
+login directory, the selection is preceded by `tycswap start: <reason>; no
+start login has a Mythos login of its own, so this start switches the default
+login for every session on it. Give Account-<n> one with <commands>.` (the
+commands of the warning in `tycswap status`), with `holds` for a start
 login at its limit, `the Fable store` and the `Fable store: ` reason on the
 Fable store, and goes to `tycswap.log` as `start: <line>`; the selection's own
 line (`Switched to start login Account-<n>.`) follows (DESIGN A126).
