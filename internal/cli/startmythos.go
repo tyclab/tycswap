@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -91,7 +90,7 @@ func selectMythosStart(root, model, account string, args []string, streams ioStr
 }
 
 func locateMythosLogin(root, model, account, session string) (mythosPlacement, error) {
-	return locateStartMythos(root, model, account, session, runtime.GOOS == "linux")
+	return locateStartMythos(root, model, account, session, reporting.SessionLinksSupported())
 }
 
 // locateStartMythos is a Mythos start's login. A linked start, fresh or a

@@ -50,7 +50,7 @@ func linkOwner(token string) (int, string, bool) {
 
 func IsSessionLink(root, path string) bool {
 	_, _, ok := linkOwner(filepath.Base(path))
-	return runtime.GOOS == "linux" && ok && filepath.Dir(path) == filepath.Join(root, "links") && filepath.Clean(path) == path
+	return SessionLinksSupported() && ok && filepath.Dir(path) == filepath.Join(root, "links") && filepath.Clean(path) == path
 }
 
 func targetScope(root, target string) (string, error) {
@@ -131,8 +131,12 @@ func ResolveSessionLink(root, path string) (string, error) {
 	return target, nil
 }
 
+// SessionLinksSupported reports whether a start here gets a link of its own:
+// native Claude on Linux and WSL (DESIGN A109).
+func SessionLinksSupported() bool { return runtime.GOOS == "linux" }
+
 func CreateSessionLink(root, target string) (string, error) {
-	if runtime.GOOS != "linux" {
+	if !SessionLinksSupported() {
 		return "", errors.New("session links require Linux")
 	}
 	if warn, err := paths.CheckPrivateRoot(root); err != nil {

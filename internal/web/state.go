@@ -59,10 +59,12 @@ type State struct {
 	UI *UIView `json:"ui"`
 	// Fable is the Fable store as status --json shows it; absent while no
 	// account has a Fable login (DESIGN A104).
-	Fable          map[string]any `json:"fable,omitempty"`
-	Mythos         map[string]any `json:"mythos,omitempty"`
-	NextStartModel *string        `json:"nextStartModel,omitempty"`
-	NextStartError string         `json:"nextStartError,omitempty"`
+	Fable  map[string]any `json:"fable,omitempty"`
+	Mythos map[string]any `json:"mythos,omitempty"`
+	// OwnStartLoginWarning: status --json's field of that name (DESIGN A126).
+	OwnStartLoginWarning string  `json:"ownStartLoginWarning,omitempty"`
+	NextStartModel       *string `json:"nextStartModel,omitempty"`
+	NextStartError       string  `json:"nextStartError,omitempty"`
 }
 
 // CountingView is what auto-switch counts now (DESIGN A91, A97). Mode
@@ -171,6 +173,7 @@ func (s *Server) buildState(o stateOpts) State {
 		}
 		st.Fable = snap.Fable
 		st.Mythos = snap.Mythos
+		st.OwnStartLoginWarning = snap.OwnStartLoginWarning
 		now := s.d.Clock.Now()
 		for _, a := range snap.Accounts {
 			if a.ProviderName() == reporting.ProviderClaude {

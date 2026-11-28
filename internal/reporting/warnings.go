@@ -8,9 +8,29 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/usage"
 )
+
+// OwnStartLoginHint is how a start login gets a login of its own; start's
+// notice and the standing warning end with it (DESIGN A126).
+const OwnStartLoginHint = "Sign one in with tycswap add --login --lineage mythos --slot N."
+
+// OwnStartLoginWarning is the standing warning while a linked start would
+// switch or hold a shared login for want of a start login's own login: auto-
+// switch is on, a start gets a link of its own here, a start login carries the
+// Mythos mark or holds a Mythos login directory, and none has a ready Mythos
+// login (DESIGN A126). "" otherwise.
+func OwnStartLoginWarning(s *store.Store, data *store.SequenceData) string {
+	if !SessionLinksSupported() || data == nil {
+		return ""
+	}
+	if ready, enrolled := s.OwnStartLogins(data); !enrolled || len(ready) > 0 || !settings.Load(s.BackupDir()).Enabled {
+		return ""
+	}
+	return "No start login has a Mythos login of its own, so tycswap start switches or holds the default login or the Fable store for every session on it. " + OwnStartLoginHint
+}
 
 // duplicateAccountWarnings returns warnings for slots that provably authenticate
 // as the same account (spec 02§13). Two offline signals: an identical credential

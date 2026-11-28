@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -246,7 +245,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 		requestedFamily := startSessionFamily(args, env)
 		model := requestedFamily
 		var dir string
-		linked := native && runtime.GOOS == "linux" && hasSessionLinkAccounts(root)
+		linked := native && reporting.SessionLinksSupported() && hasSessionLinkAccounts(root)
 		var savedTarget string
 		var err error
 		linkErr := sessionLinkErr
@@ -597,7 +596,8 @@ func withStartVar(env []string, name, value string) []string {
 // account leaves the Fable store as it is while a login sits on a start login
 // with room: the store itself, else the default login, where asIs says the
 // session only comes up, with no selection there, and its link moves it
-// (A122); else on own, a start login's own login, when one is ready (A125).
+// (A122); else on own, a start login's own login, when one is ready (A125),
+// and without one, while a start login is enrolled, a notice says so first (A126).
 // Its last notice names the accounts that need a Fable sign-in, unless the
 // rule's notice ended in A112's hint (A115).
 func selectFableStartLogin(account string, stderr io.Writer, token string, native, ownLink bool) (hold string, toDefault, asIs bool, own string) {
@@ -657,9 +657,13 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 			reportStartSelection(sw, stderr, why+"; starting on the default login.")
 			return "", true, true, ""
 		}
-		if dir, num := ownStartLogin(sw.Store); dir != "" {
+		dir, num, enrolled := ownStartLogin(sw.Store)
+		if dir != "" {
 			reportStartSelection(sw, stderr, why+ownLoginNotice(num))
 			return "", false, true, dir
+		}
+		if enrolled {
+			reportStartSelection(sw, stderr, why+ownLoginMissing("the Fable store", snap.CurrentMarked))
 		}
 	}
 	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),

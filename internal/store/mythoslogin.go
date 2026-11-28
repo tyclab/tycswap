@@ -73,6 +73,37 @@ func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) 
 	return login.Dir, true
 }
 
+// OwnStartLogin is a start login's ready Mythos login: a login of its own a
+// linked start can come up on without moving a shared login (DESIGN A125).
+type OwnStartLogin struct{ Num, Dir string }
+
+// OwnStartLogins are, in sequence order, the start logins with a ready
+// Mythos login; enrolled says whether a start login carries the Mythos mark
+// or holds a Mythos login directory, so that one sign-in gives it one
+// (DESIGN A125, A126).
+func (s *Store) OwnStartLogins(data *SequenceData) (ready []OwnStartLogin, enrolled bool) {
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if !StartLoginFrom(data, num) {
+			continue
+		}
+		if dir, ok := s.MythosLoginReady(data, num); ok {
+			ready = append(ready, OwnStartLogin{num, dir})
+		}
+		enrolled = enrolled || MythosFrom(data, num) || s.holdsMythosLoginDir(data, num)
+	}
+	return ready, enrolled
+}
+
+func (s *Store) holdsMythosLoginDir(data *SequenceData, num string) bool {
+	rec, ok := recordFor(data, num)
+	if !ok {
+		return false
+	}
+	info, err := os.Stat(MythosLoginDir(s.BackupDir(), strField(rec, "email"), strField(rec, "organizationUuid")))
+	return err == nil && info.IsDir()
+}
+
 // SelectedMythosAccount resolves the identity without guessing through an
 // unreadable credential. Empty means it is no longer a ready, eligible login.
 func (s *Store) SelectedMythosAccount(data *SequenceData, digest string) (string, error) {

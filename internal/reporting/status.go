@@ -52,6 +52,9 @@ func Status(s *store.Store, jsonOut bool) (any, error) {
 				}
 			}
 		}
+		if warning := OwnStartLoginWarning(s, data); warning != "" {
+			payload["ownStartLoginWarning"] = warning
+		}
 		return payload, nil
 	}
 	renderStatus(os.Stdout, s)
@@ -150,7 +153,8 @@ func unmanagedStatus(email string) map[string]any {
 // renderStatus prints the human status view to w (spec 02§12), and the
 // Fable store's line after it while an account has a Fable login (DESIGN
 // A104), then the accounts with Fable room but no Fable login (A112) or,
-// without them, those that need a Fable sign-in (A115).
+// without them, those that need a Fable sign-in (A115); last the warning
+// while no start login has a login of its own (A126).
 func renderStatus(w io.Writer, s *store.Store) {
 	renderActiveStatus(w, s)
 	if _, line, ok := fableStatus(s); ok {
@@ -162,6 +166,9 @@ func renderStatus(w io.Writer, s *store.Store) {
 	data, _ := s.ReadSequence()
 	if line := MythosLoginLine(readMythosView(s, data).object); line != "" {
 		fmt.Fprintln(w, line)
+	}
+	if warning := OwnStartLoginWarning(s, data); warning != "" {
+		fmt.Fprintln(w, printer.Yellowed(warning))
 	}
 }
 

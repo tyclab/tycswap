@@ -141,6 +141,9 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 	if lockstep := lockstepUsageWarnings(infos, entries); len(lockstep) > 0 {
 		payload["lockstepUsageWarnings"] = lockstep
 	}
+	if warning := OwnStartLoginWarning(s, data); warning != "" {
+		payload["ownStartLoginWarning"] = warning
+	}
 	if unclaimed, _ := s.Creds.ListUnclaimed(); len(unclaimed) > 0 {
 		keys := make([]string, 0, len(unclaimed))
 		for k := range unclaimed {
@@ -154,8 +157,10 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 
 // renderAccounts prints the human account list to w (spec 02§11). Rows carry the
 // alias-first label, the org tag, and active/disabled markers; usage lines are
-// indented 5 spaces; duplicate/lockstep warnings follow (unclaimed credentials
-// are deliberately not shown); then the running-instances block.
+// indented 5 spaces; the Fable and Mythos lines and the warning while no start
+// login has a login of its own (DESIGN A126), then duplicate/lockstep warnings
+// follow (unclaimed credentials are deliberately not shown); then the
+// running-instances block.
 func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries map[string]usage.UsageEntry, showTokenStatus bool) {
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
@@ -221,6 +226,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 	}
 	if line := MythosLoginLine(mythos.object); line != "" {
 		fmt.Fprintln(w, line)
+	}
+	if warning := OwnStartLoginWarning(s, data); warning != "" {
+		fmt.Fprintln(w, printer.Yellowed(warning))
 	}
 	dup := duplicateAccountWarnings(s, infos)
 	lockstep := lockstepUsageWarnings(infos, entries)
