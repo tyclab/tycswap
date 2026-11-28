@@ -6245,7 +6245,9 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   the refresh token (DESIGN A129). The log names every refresh whose request
   went out (INFO) and warns when a sent one got no reply: a later `re-login
   needed` for that account comes from it. A refreshed login of the active
-  account is stored after waiting for the store lock up to 35 s.
+  account is stored once the store lock is free, however long that takes;
+  each time the lock's timeout passes meanwhile the log warns `Still waiting
+  to store the refreshed login of account N`.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

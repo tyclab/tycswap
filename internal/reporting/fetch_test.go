@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -120,39 +119,26 @@ func TestFetchActiveUsageSkipReason_WriteError(t *testing.T) {
 	assertSkip(t, fetchActiveUsage(s, "1", skipEmail, creds), "refresh discarded: disk full")
 }
 
-func TestFetchActiveUsageSkipReason_LockContention(t *testing.T) {
+// A successor already received waits for the store lock until it has it:
+// it asks again each time the lock's own timeout passes and writes one
+// WARNING per such round, naming the account by number only (DESIGN A129).
+func TestFetchActiveUsageStoresTheSuccessorAfterSeveralLockTimeouts(t *testing.T) {
 	s, creds := refreshingStore(t, nil)
-	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
-	waitPersistLockFor(t, 20*time.Millisecond)
-	testutil.HoldLock(t, s.LockFile)
-	assertSkip(t, fetchActiveUsage(s, "1", skipEmail, creds),
-		"refresh discarded: Failed to acquire lock - another instance may be running")
-}
-
-func waitPersistLockFor(t *testing.T, d time.Duration) {
-	t.Helper()
-	prev := persistLockWait
-	persistLockWait = d
-	t.Cleanup(func() { persistLockWait = prev })
-}
-
-// A successor already received waits for the store lock as long as a refresh
-// can hold it, not the lock's own timeout: a guarded refresh of another
-// account awaiting its reply does not cost this login (DESIGN A129).
-func TestFetchActiveUsageStoresTheSuccessorAfterALongLockHold(t *testing.T) {
-	s, creds := refreshingStore(t, nil)
-	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
-	if want := store.GuardedRefreshHold(cclock.DefaultTimeoutS, oauth.DefaultRefreshSendTimeout, oauth.DefaultRefreshReplyTimeout); persistLockWait != want {
-		t.Fatalf("persistLockWait = %v, want a guarded refresh's whole hold, %v", persistLockWait, want)
-	}
-	waitPersistLockFor(t, 5*time.Second)
+	const timeout = 20 * time.Millisecond
+	s.Lock = filelock.New(s.LockFile, timeout)
 	release := testutil.HoldLock(t, s.LockFile)
-	time.AfterFunc(300*time.Millisecond, release)
+	time.AfterFunc(25*timeout, release)
 	if rec := fetchActiveUsage(s, "1", skipEmail, creds); rec.SkipReason != "" {
 		t.Fatalf("SkipReason = %q, want the successor stored", rec.SkipReason)
 	}
 	if backup, _ := s.ReadAccountCredentials("1", skipEmail); !strings.Contains(backup, "new-refresh") {
 		t.Errorf("the backup does not hold the successor")
+	}
+	if n := logCount(t, s, logging.LevelWarning, "Still waiting to store the refreshed login of account 1"); n < 2 {
+		t.Errorf("%d waiting warnings over a hold of %d lock timeouts, want one per round", n, 25)
+	}
+	if log, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log")); strings.Contains(string(log), "new-refresh") || strings.Contains(string(log), "new-access") {
+		t.Errorf("the log carries a token")
 	}
 }
 

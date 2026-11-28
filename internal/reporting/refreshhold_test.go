@@ -14,18 +14,15 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/store"
 )
 
 // A guarded refresh of the Fable store's login holds the store lock while it
-// waits for Claude Code's locks and then for its reply, each within its
-// bound; the active login's received successor waits that long for the lock
-// and is stored (DESIGN A129). The bounds are small stand-ins for the real
-// ones: the Claude Code lock is held well within lockBound, the reply comes
-// within the client's reply bound.
+// waits for Claude Code's locks and then for its reply, many times the store
+// lock's timeout here; the active login's received successor waits until it
+// has the lock and is stored (DESIGN A129). The bounds are small stand-ins
+// for the real ones.
 func TestReceivedSuccessorOutwaitsAGuardedRefreshWithNestedLocks(t *testing.T) {
 	const (
-		lockBound  = 1500 * time.Millisecond
 		lockHold   = 700 * time.Millisecond
 		send       = 200 * time.Millisecond
 		reply      = time.Second
@@ -61,7 +58,7 @@ func TestReceivedSuccessorOutwaitsAGuardedRefreshWithNestedLocks(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	client := &oauth.HTTPClient{Client: server.Client(), TokenURL: server.URL, RefreshSendTimeout: send, RefreshReplyTimeout: reply}
-	waitPersistLockFor(t, store.GuardedRefreshHold(lockBound, send, reply))
+	s.Lock = filelock.New(s.LockFile, 100*time.Millisecond)
 	worker := *s
 	worker.Lock = filelock.New(s.LockFile, 0)
 	done := make(chan oauth.RefreshOutcome, 1)
