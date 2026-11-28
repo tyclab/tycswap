@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/credstore"
@@ -390,6 +391,26 @@ func TestHostedLoopRoundRetiresProfiles(t *testing.T) {
 	dir := legacyProfile(t, sw, "1", retireCreds("at-old", "rt-old"), true, true)
 	newAutoFacade(sw, nil).codexRound(context.Background(), nil)
 	assertLiveProfileRetired(t, sw, dir)
+}
+
+// A128: a scheduled tick removes the temp file a killed write left in the
+// data root, and says so once.
+func TestScheduledTickSweepsStaleTempFiles(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{})
+	stale := filepath.Join(sw.BackupDir(), ".atomic-1.tmp")
+	writeTestFile(t, stale, "a copy of a login", 0o600)
+	old := sw.Clk.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	scheduledTick(t)
+	if exists(stale) {
+		t.Fatal("the tick kept a stale temp file")
+	}
+	logged, _ := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
+	if n := strings.Count(string(logged), "Removed 1 stale temporary files"); n != 1 {
+		t.Fatalf("sweep lines logged = %d, want 1:\n%s", n, logged)
+	}
 }
 
 // The copy marker is written only after a complete copy: a transcript that

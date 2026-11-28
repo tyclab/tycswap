@@ -5967,6 +5967,18 @@ line `<change> by <actor>` beside the change's own line.
   once per set of accounts: the set is kept as
   `lastFableRoomWithoutLogin` in `fable/autoswitch_state.json`, and a tick
   with room clears it (DESIGN A112).
+- **A config naming another account.** When `~/.claude.json` names one
+  account and the default login's credential is another's, the resolver
+  takes the credential's and logs `live config names slot <x> (…) but the
+  live credential is slot <y>'s (by …); using <y>` at DEBUG, once per
+  process. Sessions on the Fable store or a Mythos login write their account
+  there, and the credential decides in every case (DESIGN A68, A127).
+- **Stale temporary files.** Every scheduled real round (`auto --once`, on
+  or off, the `auto` loop and the app's hosted loop; never a dry run or a
+  status line's tick) removes the `.atomic-*.tmp` files older than an hour
+  that writes killed before their rename left under `<backup_root>`,
+  following no symlink inside it, and logs `Removed <n> stale temporary files` at INFO
+  when it removed any (DESIGN A128).
 
 ## SETTINGS
 

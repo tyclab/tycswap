@@ -582,14 +582,15 @@ func TestHarvestFableLive(t *testing.T) {
 
 // A10 ------------------------------------------------------------------------
 
+// A127: the mismatch line is never a warning, beside the Fable store's
+// account or not (A100 lowered it for that account alone).
 func TestDefaultResolverBesideTheFableStore(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		fable   bool
-		warning bool
+		name  string
+		fable bool
 	}{
-		{"config names the Fable store's live account", true, false},
-		{"no Fable store", false, true},
+		{"config names the Fable store's live account", true},
+		{"no Fable store", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := fableFixture(t)
@@ -603,8 +604,8 @@ func TestDefaultResolverBesideTheFableStore(t *testing.T) {
 				t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
 			}
 			raw, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
-			if warned := strings.Contains(string(raw), "WARNING") && strings.Contains(string(raw), "live config names slot 2"); warned != tc.warning {
-				t.Fatalf("WARNING logged = %v, want %v:\n%s", warned, tc.warning, raw)
+			if strings.Contains(string(raw), "WARNING") && strings.Contains(string(raw), "live config names slot 2") {
+				t.Fatalf("the mismatch line was logged as a warning:\n%s", raw)
 			}
 		})
 	}

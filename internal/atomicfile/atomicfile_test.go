@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestWriteCreatesParentAndFile(t *testing.T) {
@@ -131,4 +132,65 @@ func TestWriteErrorUnlinksTemp(t *testing.T) {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// A128: old temp files go at any depth; fresh ones, other names and what lies
+// behind a symlink stay.
+func TestSweepStaleRemovesOldTempFiles(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	now := time.Now()
+	old := now.Add(-2 * time.Hour)
+	file := func(p string, mtime time.Time) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	oldTop := file(filepath.Join(root, ".atomic-1.tmp"), old)
+	nested := file(filepath.Join(root, "cache", "deep", ".atomic-2.tmp"), old)
+	fresh := file(filepath.Join(root, ".atomic-3.tmp"), now)
+	other := file(filepath.Join(root, ".tycswap-migrate-4.tmp"), old)
+	behind := file(filepath.Join(outside, ".atomic-5.tmp"), old)
+	want := map[string]bool{oldTop: false, nested: false, fresh: true, other: true, behind: true}
+	links, fileLink := filepath.Join(root, "links"), filepath.Join(root, ".atomic-6.tmp")
+	if os.Symlink(outside, links) == nil && os.Symlink(behind, fileLink) == nil {
+		want[links], want[fileLink] = true, true
+	} else {
+		t.Log("no symlinks here: only the plain files are checked")
+	}
+	if got := SweepStale(root, time.Hour, now); got != 2 {
+		t.Fatalf("SweepStale = %d, want 2", got)
+	}
+	for p, kept := range want {
+		if _, err := os.Lstat(p); (err == nil) != kept {
+			t.Errorf("%s kept = %v, want %v", p, err == nil, kept)
+		}
+	}
+}
+
+// A data root that is itself a symlink is still swept.
+func TestSweepStaleThroughASymlinkedRoot(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, ".atomic-1.tmp")
+	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := os.Chtimes(stale, now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+	if got := SweepStale(link, time.Hour, now); got != 1 {
+		t.Fatalf("SweepStale through a symlinked root = %d, want 1", got)
+	}
 }
