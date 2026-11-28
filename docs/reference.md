@@ -5954,6 +5954,12 @@ line `<change> by <actor>` beside the change's own line.
   DEBUG when the config names the Fable store's live account or an account
   with a signed-in Mythos login, whose sessions write their account there,
   else as a warning (DESIGN A68, A100, A127).
+- **Stale temporary files.** Every scheduled real round (`auto --once`, on
+  or off, the `auto` loop and the app's hosted loop; never a dry run or a
+  status line's tick) removes the `.atomic-*.tmp` files older than an hour
+  that writes killed before their rename left under `<backup_root>`,
+  following no symlink inside it, and logs `Removed <n> stale temporary files` at INFO
+  when it removed any (DESIGN A128).
 
 ## SETTINGS
 

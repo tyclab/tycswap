@@ -10944,3 +10944,35 @@ resolution (the resolver calls it).
 **Limits.** A68's case, a running default-login client writing its old account
 back after a switch, is logged at DEBUG too when that account has a
 signed-in Mythos login; the resolution is unchanged either way.
+
+## A128. The tick removes the temp files of killed writes
+
+**Why.** `atomicfile` writes through a temp file `.atomic-*.tmp` beside the
+target and removes it on any error, but a process killed between create and
+rename (a status line the client times out, a SIGKILL) leaves it. One box
+held 15 such files from three weeks in the data root and its `cache/`, mode
+0600, some of them copies of credentials or config.
+
+**The rule.** `atomicfile.SweepStale(root, olderThan, now)` resolves `root`
+once (a data root that is itself a symlink is swept), walks it with
+`filepath.WalkDir`, which follows no symlink below it (`links/` points at
+login directories outside the root), and removes the regular files named like
+`.atomic-*.tmp` whose mtime is older than `olderThan`; a file it cannot read
+or remove is skipped. `retireProfiles`, the round every scheduled real tick
+runs (`auto --once` on or off, the `auto` loop and the app's hosted loop;
+never a dry run or a status line's tick), calls it on the data root
+(`BackupDir`, which holds `tycswap.log`) with `staleTempAge`, one hour, and
+the store's clock, and logs `Removed N stale temporary files` at INFO when N
+is above zero. A write takes milliseconds, so an hour-old temp file has no
+writer; a frozen writer that resumes after its temp was swept gets the
+rename's error back from `Write`, as for any failed write. The walk starts at
+the data root only, never at the home directory or `~/.claude`; the profile
+and login directories inside the data root are walked, and there too only
+`atomicfile`'s name is removed.
+
+**Limits.** Only `atomicfile`'s name is swept: nothing else uses it, and the
+other temp names (`*.tmp` of `credstore`, `ccfile` and `switching`,
+`.settings-*.tmp`, `.tycswap-*.tmp`, `.tycswap-codex-*.tmp`,
+`.tycswap-copy-*`, `.tycswap-upgrade-*`) can leak the same way and are left
+as they are; `.tycswap-migrate-*.tmp` and `login.*` have their own cleanups.
+A temp file outside the data root is never removed.
