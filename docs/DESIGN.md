@@ -10966,7 +10966,10 @@ not signed in: `Give Account-<n> one with <commands>.`
   after their Fable and Mythos lines; `status --json`, `list --json` and the
   dashboard's state carry it as `ownStartLoginWarning`, present only while it
   holds, and the dashboard shows it as a notice above the accounts, beside
-  A115's Fable sign-in notice. It is evaluated where the state is built, so a
+  A115's Fable sign-in notice. The dashboard reads its snapshot through the
+  providers' merged source, whose merge carries the field with the Claude
+  snapshot's Fable and Mythos fields (until 2026-11-28 it dropped it, and the
+  page showed no notice). It is evaluated where the state is built, so a
   page drawing a WSL box's state shows that box's answer.
 
 A box whose start logins never had a Mythos mark or login is not nagged, as
@@ -10986,8 +10989,10 @@ present with an enrolled start login and no ready one on Linux, naming the
 sign-in, or the Mythos mark once it was removed; absent with a ready one,
 without marks, with auto-switch off, and without a Mythos mark or login),
 `TestOwnStartLoginWarningSkipsAnAccountThatIsNoOAuthLogin`.
-`web`: the `signin` harness of `TestAppJSFableSignIn` shows and hides the
-dashboard notice.
+`providers`: `TestMultiSnapshotSourcePreservesMythosLoginModelsAndStartLoginWarning`
+(with and without Codex). `web`: the `signin` harness of
+`TestAppJSFableSignIn` shows the notice from the state the server serves over
+the merged source, and hides it.
 
 ## A127. The account-mismatch line is logged at DEBUG
 

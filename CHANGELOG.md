@@ -2,6 +2,18 @@
 
 ## Since v0.24.1
 
+- **Fixed:** Five follow-ups to the recent fixes. The dashboard now shows the
+  warning that no start login has a Mythos login of its own, which `status`
+  and `list` already showed. `tycswap add` of a live login whose tokens
+  Claude Code cleared now refuses before it asks anything, instead of first
+  turning off the Fable store of the account in the slot. A refreshed login
+  the active account already received now waits up to 53 s for the store
+  lock instead of 35 s, as long as a refresh of the Fable store's login can
+  hold it, so it is no longer dropped with its refresh token spent. Tests
+  now hold that no caller puts a deadline of its own on a guarded refresh.
+  The default login no longer lands on an account whose Mythos login a
+  session started on while the tick was choosing: the ranks are read again
+  right before the switch (DESIGN A126, A129, A130, A131).
 - **Fixed:** With no session on the default login, auto-switch could move
   the default login back and forth between two accounts every few minutes
   (trigger `reserved`): the Fable store's account and an account whose
