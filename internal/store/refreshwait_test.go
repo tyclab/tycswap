@@ -4,6 +4,7 @@ package store
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,8 +75,39 @@ func TestGuardedRefreshStoresReplyAfterSendBound(t *testing.T) {
 	if backup, _ := s.ReadAccountCredentials("2", "user2@example.com"); !strings.Contains(backup, "rt-2-new") {
 		t.Errorf("slot 2's backup does not hold the successor")
 	}
-	if log := logText(t, s); !strings.Contains(log, "INFO - Refreshing the token of account 2") {
-		t.Errorf("log lacks the INFO line before the refresh:\n%s", log)
+	log := logText(t, s)
+	if !strings.Contains(log, "INFO - Refreshing the token of account 2") {
+		t.Errorf("log lacks the INFO line of the sent refresh:\n%s", log)
+	}
+	noTokens(t, log, "at-2", "rt-2", "at-2-new", "rt-2-new")
+}
+
+// noTokens fails when a token of the credential reached the log.
+func noTokens(t *testing.T, log string, tokens ...string) {
+	t.Helper()
+	for _, tok := range tokens {
+		if strings.Contains(log, tok) {
+			t.Errorf("the log carries the token %q:\n%s", tok, log)
+		}
+	}
+}
+
+// A refresh whose request never went out writes nothing above DEBUG: an
+// offline box stays quiet (ruling 18), the INFO line means "sent".
+func TestGuardedRefreshNeverSentWritesNothingAboveDebug(t *testing.T) {
+	s := twoSlotStore(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	c := &oauth.HTTPClient{Client: &http.Client{}, TokenURL: "https://" + ln.Addr().String() + "/token",
+		RefreshSendTimeout: 50 * time.Millisecond, RefreshReplyTimeout: time.Second}
+	if out := s.RefreshBackupGuarded(context.Background(), c, "2", "user2@example.com", lineageCreds("at-2", "rt-2")); out.Unanswered || out.Error != oauth.ErrTransient {
+		t.Fatalf("RefreshBackupGuarded = %+v, want a transient failure that was never sent", out)
+	}
+	if log := logText(t, s); strings.Contains(log, "INFO") || strings.Contains(log, "WARNING") {
+		t.Errorf("an unsent refresh wrote a line above DEBUG:\n%s", log)
 	}
 }
 
@@ -96,6 +128,7 @@ func TestGuardedRefreshWarnsWhenReplyLost(t *testing.T) {
 		!strings.Contains(log, "re-login needed") {
 		t.Errorf("log lacks the lost-reply warning:\n%s", log)
 	}
+	noTokens(t, log, "at-2", "rt-2")
 }
 
 func TestGuardedRefreshLogsFailureReason(t *testing.T) {
@@ -104,7 +137,9 @@ func TestGuardedRefreshLogsFailureReason(t *testing.T) {
 		return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
 	}}
 	s.RefreshBackupGuarded(context.Background(), c, "2", "user2@example.com", lineageCreds("at-2", "rt-2"))
-	if log := logText(t, s); !strings.Contains(log, "WARNING - The token refresh of account 2 failed (invalid_grant)") {
+	log := logText(t, s)
+	if !strings.Contains(log, "WARNING - The token refresh of account 2 failed (invalid_grant)") {
 		t.Errorf("log lacks the failure's reason:\n%s", log)
 	}
+	noTokens(t, log, "at-2", "rt-2")
 }

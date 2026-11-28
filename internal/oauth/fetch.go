@@ -89,7 +89,7 @@ func TryFetchUsageForAccount(
 	persist PersistFn,
 ) UsageOutcome {
 	return TryFetchUsageGuarded(ctx, c, num, email, creds, isActive, func(ctx context.Context, held string) RefreshOutcome {
-		out := c.Refresh(ctx, held)
+		out := LoggedRefresh(ctx, c, Log, "account "+num, held)
 		if out.Credentials != "" {
 			persistCredentials(persist, num, email, out.Credentials)
 		}

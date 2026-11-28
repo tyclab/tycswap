@@ -98,8 +98,11 @@ func Write(path string, data []byte, o Opts) error {
 // SweepStale removes what writes killed before their rename left under root:
 // regular files named like tempPattern whose mtime is older than olderThan.
 // It follows no symlink below root, skips what it cannot read or remove, and
-// returns how many files it removed (DESIGN A128).
+// returns how many files it removed; an empty root removes nothing (A128).
 func SweepStale(root string, olderThan time.Duration, now time.Time) int {
+	if root == "" {
+		return 0
+	}
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}

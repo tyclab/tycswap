@@ -10929,9 +10929,10 @@ login, one at its limit included, or holds it, and every session on it runs
 on that account. Nothing said so, and on a box with one such login a single
 lost sign-in brought the old behaviour back unnoticed.
 
-**The rule.** A start login is enrolled while it carries the Mythos mark or
-holds a Mythos login directory: the protection was there, and its own commands
-give it back. `store.OwnStartLogins` is the one rule for both facts, the ready
+**The rule.** A start login is enrolled while it is an OAuth login and
+carries the Mythos mark or holds a Mythos login directory: the protection was
+there, and its own commands give it back. An account of another kind can have
+no Mythos login and is never enrolled. `store.OwnStartLogins` is the one rule for both facts, the ready
 own logins and the enrolled start logins, each in sequence order;
 `ownStartLogin` ranks the ready ones as A125 does, and the warning below reads
 the same function. `reporting.OwnStartLoginHint` names, for the enrolled start
@@ -10945,13 +10946,13 @@ not signed in: `Give Account-<n> one with <commands>.`
   its own, no `--account`, marks set, auto-switch on, a selection that would
   switch or hold) and finds none ready while a start login is enrolled, start
   says, before its selection, `<why>; no start login has a Mythos login of its
-  own, so this start switches the default login for every session on it.
-  Give Account-<n> one with <commands>.` (`holds` for a
-  current start login at its limit; `the Fable store` with A122's
+  own, so this start may switch or hold the default login for every session
+  on it. Give Account-<n> one with <commands>.` (`the Fable store` with A122's
   `Fable store: ` reason on the Fable store), to stderr and `tycswap.log`
-  through `reportStartSelection`. The selection then runs and reports as
-  before; a hold says nothing of its own, a switch names its target
-  (`Switched to start login Account-N.`), so the two lines do not repeat.
+  through `reportStartSelection`. The notice names no outcome: the selection
+  has not run, and with no usable start login it moves nothing. The selection
+  then runs and reports as before; a hold says nothing of its own, a switch
+  names its target (`Switched to start login Account-N.`).
 - **Standing warning.** `reporting.OwnStartLoginWarning` holds while start
   links exist on this platform (`reporting.SessionLinksSupported`, the
   platform half of the condition `runStart` creates links by, which
@@ -10972,12 +10973,14 @@ unchanged.
 
 **Tests.** `cli` (Linux): `TestStartWithoutAnOwnLoginSaysItMovesTheSharedLogin`
 (disabled, signed out and unmarked for Mythos, each with its command, on the
-default login and the Fable store, and a hold), `TestStartThatTakesNoOwnLogin`
+default login and the Fable store, a hold, and a selection that finds no
+usable start login and moves nothing), `TestStartThatTakesNoOwnLogin`
 (an own login of no start login says nothing). `reporting`:
 `TestStatusAndListWarnWithoutAnOwnStartLogin` (status and list, text and JSON:
 present with an enrolled start login and no ready one on Linux, naming the
 sign-in, or the Mythos mark once it was removed; absent with a ready one,
-without marks, with auto-switch off, and without a Mythos mark or login).
+without marks, with auto-switch off, and without a Mythos mark or login),
+`TestOwnStartLoginWarningSkipsAnAccountThatIsNoOAuthLogin`.
 `web`: the `signin` harness of `TestAppJSFableSignIn` shows and hides the
 dashboard notice.
 
@@ -11012,8 +11015,9 @@ rename (a status line the client times out, a SIGKILL) leaves it. One box
 held 15 such files from three weeks in the data root and its `cache/`, mode
 0600, copies of state and config files.
 
-**The rule.** `atomicfile.SweepStale(root, olderThan, now)` resolves `root`
-once (a data root that is itself a symlink is swept), walks it with
+**The rule.** `atomicfile.SweepStale(root, olderThan, now)` removes nothing
+for an empty `root` (which `filepath.EvalSymlinks` would read as the working
+directory), else resolves `root` once (a data root that is itself a symlink is swept), walks it with
 `filepath.WalkDir`, which follows no symlink below it (`links/` points at
 login directories outside the root), and removes the regular files named like
 `.atomic-*.tmp` whose mtime is older than `olderThan`; a file it cannot read
@@ -11067,13 +11071,26 @@ client (`RefreshSendTimeout`, `RefreshReplyTimeout`; zero takes
 The guarded refreshes (`RefreshBackupGuarded`, `RefreshFableBackupGuarded`,
 `RefreshFableLiveGuarded`, `RefreshLegacyLogin`, the group login's
 `refreshExpiredGroupLogin`) no longer cut the context; `GuardedRefreshTimeout`
-is gone. They send through `Store.SendRefresh`, which logs INFO `Refreshing
-the token of <subject>` before, WARNING when the outcome is unanswered (the
-refresh token may be spent, and a later `re-login needed` comes from this)
-and for `invalid_grant`, and DEBUG for any other failure, a request that
-never went out included: an offline box writes no line per account per poll
-beyond the usage fetch's own warning. The client's own lines stay at DEBUG
-and never carry a token.
+is gone. They send through `Store.SendRefresh`, and the active login's own
+refresh while no client runs (`oauth.TryFetchUsageForAccount`) sends the
+same way; both are `oauth.LoggedRefresh`. It logs INFO `Refreshing the token
+of <subject>` once the request has been written (the client calls it from
+its `WroteRequest` hook, handed over in the context), so a refresh whose
+process is killed during the wait leaves a trace; WARNING when the outcome is
+unanswered (the refresh token may be spent, and a later `re-login needed`
+comes from this) and for `invalid_grant`; DEBUG for any other failure. A
+request that never went out writes nothing above DEBUG: an offline box adds
+no line per account per poll to the usage fetch's own warning. The subject
+is an account number, never an address, and no line carries a token. The
+send bound and the reply wait are tested over HTTP/1.1 and over HTTP/2, the
+token endpoint's protocol; `WroteRequest` fires on both.
+
+A successor that was already received is stored under the locks; that wait
+is as long as a refresh can hold the store lock, the send bound plus the
+reply bound (`persistLockWait` in `reporting`, from the two constants). The
+active login's refresh without a running client is sent before it takes the
+locks, so a guarded refresh of another account that awaits its reply no
+longer makes it drop the successor after 10 s.
 
 The other callers pass `context.Background()` and so get the full reply wait:
 the usage fetch (`oauth.TryFetchUsageForAccount` from `reporting`), the
@@ -11099,10 +11116,10 @@ take: it refuses rather than launch on an unverified login. No code changed
 for these: the only new long holder is a sent refresh whose reply the network
 holds back, which the tick's `(network?)` and `start`'s `check the connection`
 name, and the lock's own message says another instance holds it. The active
-login's usage fetch with no Claude Code running refreshes before it takes the
-lock and discards the successor when the lock stays busy for 10 s; that path
-is unchanged here, and such a hold needs a reply the network holds back while
-this fetch's own reply came through.
+login's refresh without a running client still runs outside the locks and
+drops its successor when they stay busy longer than a refresh can hold them;
+refreshing it under the locks, as the guarded refreshes do (upstream #167),
+is the open item.
 
 ## A130. A login whose tokens Claude Code wiped never replaces a stored login
 
@@ -11130,18 +11147,23 @@ key. Where a live login would be written into a slot it is checked:
 - `add` of the live login refuses it with a validation error that asks for a
   new sign-in (`tycswap add --login`).
 - The Fable store's outgoing login (`backUpFableOutgoing`, which also takes
-  the last install's account) is not written into the Fable login; a warning
-  is logged.
-- Parking the default login (`parkDefaultLogin`) keeps the stored login and
-  logs a warning.
-- `import` refuses an entry whose credential is wiped: an export taken of a
-  wiped live login would otherwise overwrite the slot on the importing side.
+  the last install's account) is not written into the Fable login, and with
+  no account named for it it is not stashed either; a warning is logged.
+- `export` of the active account whose live login is wiped exports the
+  account's stored login, as for an inactive account, and says so on stderr.
+- `import` skips an entry whose credential is wiped, with a warning that
+  names the account, and imports the others: such an entry is never written
+  into a slot, and one dead login does not block an archive made before this
+  rule or a stored login the old defect replaced.
 
 The harvest of a rotated live login (`harvestLiveCredential`,
 `HarvestFableLive`) and the `own-rotated` branch cannot reach a wiped login:
 they need the chain record or a profile answer, and both need an access
-token. A `--login` sign-in is checked by `CheckLogin`; renumbering and
-rollback move stored logins only.
+token. Disabling the account whose login is live cannot either: before
+`parkDefaultLogin` writes, `WithdrawLogin` refuses a login only the config
+or the last install attributes, and a wiped login has no other attribution.
+A `--login` sign-in is checked by `CheckLogin`; renumbering and rollback move
+stored logins only.
 
 **Limits.** A login with only one of its two tokens left is not wiped and is
 handled as before. A live JSON object with no `claudeAiOauth` at all counts

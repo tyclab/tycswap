@@ -681,9 +681,9 @@ the start selects as above (DESIGN A125). When a start login carries the
 Mythos mark or holds a Mythos login but none is ready (signed out, or the
 account disabled or unmarked for Mythos), the start says so first, with the
 commands that give one back (`tycswap start: Account-9 is no start login; no
-start login has a Mythos login of its own, so this start switches the default
-login for every session on it. Give Account-8 one with tycswap add --login
---lineage mythos --slot 8.`), and `status`, `list`, their `--json` and the
+start login has a Mythos login of its own, so this start may switch or hold
+the default login for every session on it. Give Account-8 one with tycswap add
+--login --lineage mythos --slot 8.`), and `status`, `list`, their `--json` and the
 dashboard carry the same warning while it holds (DESIGN A126).
 
 Selection is best effort. Missing marks and an already-marked current login

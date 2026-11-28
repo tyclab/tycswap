@@ -182,8 +182,11 @@ func (l *FileLock) Held() bool {
 
 // With acquires the lock (default timeout), runs fn, then releases. If the lock
 // cannot be acquired it returns cerr.Lock without running fn.
-func (l *FileLock) With(fn func() error) error {
-	ok, err := l.Acquire(l.timeout)
+func (l *FileLock) With(fn func() error) error { return l.WithWait(l.timeout, fn) }
+
+// WithWait is With waiting up to timeout (the lock's own when <= 0).
+func (l *FileLock) WithWait(timeout time.Duration, fn func() error) error {
+	ok, err := l.Acquire(timeout)
 	if err != nil {
 		return err
 	}

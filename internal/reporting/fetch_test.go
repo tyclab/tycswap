@@ -122,9 +122,37 @@ func TestFetchActiveUsageSkipReason_WriteError(t *testing.T) {
 func TestFetchActiveUsageSkipReason_LockContention(t *testing.T) {
 	s, creds := refreshingStore(t, nil)
 	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
+	waitPersistLockFor(t, 20*time.Millisecond)
 	testutil.HoldLock(t, s.LockFile)
 	assertSkip(t, fetchActiveUsage(s, "1", skipEmail, creds),
 		"refresh discarded: Failed to acquire lock - another instance may be running")
+}
+
+func waitPersistLockFor(t *testing.T, d time.Duration) {
+	t.Helper()
+	prev := persistLockWait
+	persistLockWait = d
+	t.Cleanup(func() { persistLockWait = prev })
+}
+
+// A successor already received waits for the store lock as long as a refresh
+// can hold it, not the lock's own timeout: a guarded refresh of another
+// account awaiting its reply does not cost this login (DESIGN A129).
+func TestFetchActiveUsageStoresTheSuccessorAfterALongLockHold(t *testing.T) {
+	s, creds := refreshingStore(t, nil)
+	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
+	if persistLockWait != oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+		t.Fatalf("persistLockWait = %v, want the send and reply bounds", persistLockWait)
+	}
+	waitPersistLockFor(t, 5*time.Second)
+	release := testutil.HoldLock(t, s.LockFile)
+	time.AfterFunc(300*time.Millisecond, release)
+	if rec := fetchActiveUsage(s, "1", skipEmail, creds); rec.SkipReason != "" {
+		t.Fatalf("SkipReason = %q, want the successor stored", rec.SkipReason)
+	}
+	if backup, _ := s.ReadAccountCredentials("1", skipEmail); !strings.Contains(backup, "new-refresh") {
+		t.Errorf("the backup does not hold the successor")
+	}
 }
 
 func TestFetchActiveUsageSkipReason_RefreshFailed(t *testing.T) {

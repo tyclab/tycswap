@@ -78,12 +78,15 @@ func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) 
 type OwnStartLogin struct{ Num, Dir string }
 
 // OwnStartLogins are, in sequence order, the start logins with a ready
-// Mythos login, and those enrolled for one: carrying the Mythos mark or
-// holding a Mythos login directory (DESIGN A125, A126).
+// Mythos login, and those enrolled for one: OAuth logins carrying the Mythos
+// mark or holding a Mythos login directory (DESIGN A125, A126).
 func (s *Store) OwnStartLogins(data *SequenceData) (ready []OwnStartLogin, enrolled []string) {
+	if data == nil {
+		return nil, nil
+	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if !StartLoginFrom(data, num) {
+		if !StartLoginFrom(data, num) || kindFrom(data, num) != "oauth" {
 			continue
 		}
 		if dir, ok := s.MythosLoginReady(data, num); ok {

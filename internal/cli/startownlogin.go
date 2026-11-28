@@ -48,14 +48,11 @@ func ownLoginNotice(num string) string {
 }
 
 // ownLoginMissing is the rest of start's notice where it would have come up
-// on an own login and a start login lost its own: the selection switches, or
-// holds, login for every session on it, and hint what gives one back (A126).
-func ownLoginMissing(login string, holds bool, hint string) string {
-	verb := "switches"
-	if holds {
-		verb = "holds"
-	}
-	return "; no start login has a Mythos login of its own, so this start " + verb + " " + login + " for every session on it. " + hint
+// on an own login and a start login lost its own: the selection, which has not
+// run yet, may switch or hold login for every session on it; hint gives one
+// back (DESIGN A126).
+func ownLoginMissing(login, hint string) string {
+	return "; no start login has a Mythos login of its own, so this start may switch or hold " + login + " for every session on it. " + hint
 }
 
 // ownLoginInstead is the own login a linked start of family comes up on
@@ -94,7 +91,7 @@ func ownLoginInstead(family string, stderr io.Writer) string {
 	dir, num, hint := ownStartLogin(sw.Store)
 	if dir == "" {
 		if hint != "" {
-			reportStartSelection(sw, stderr, why+ownLoginMissing("the default login", snap.CurrentMarked, hint))
+			reportStartSelection(sw, stderr, why+ownLoginMissing("the default login", hint))
 		}
 		return ""
 	}

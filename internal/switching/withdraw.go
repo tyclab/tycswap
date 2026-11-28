@@ -96,17 +96,11 @@ func parkDefaultLogin(s *store.Store, data *store.SequenceData, from groups.Acco
 		return cerr.Session("Account-%s's credential store is unavailable", from.Number)
 	}
 	if s.AccountKindFor(from.Number) == "oauth" {
-		switch {
-		case oauth.CredentialFingerprint(value) == nil:
+		if oauth.CredentialFingerprint(value) == nil {
 			return fmt.Errorf("cannot verify Account-%s's live OAuth login", from.Number)
-		case oauth.TokensWiped(value):
-			if s.Log != nil {
-				s.Log.Warningf("The live login carries no tokens; Account-%s's stored login was kept", from.Number)
-			}
-		default:
-			if err := s.WriteAccountCredentials(from.Number, from.Email, oauth.AccountOnly(value)); err != nil {
-				return err
-			}
+		}
+		if err := s.WriteAccountCredentials(from.Number, from.Email, oauth.AccountOnly(value)); err != nil {
+			return err
 		}
 	}
 	configSlot := ""

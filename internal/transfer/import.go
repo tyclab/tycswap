@@ -201,7 +201,10 @@ func Import(acc Accounts, source string, force bool) error {
 				// or client secrets, which are not this account's (DESIGN A29).
 				credsText = oauth.AccountOnly(string(b))
 				if oauth.TokensWiped(credsText) {
-					return cerr.Transfer("credentials for %s carry no tokens (Claude Code cleared them); sign in to that account again and export it anew", email)
+					// Never written into a slot; the other accounts still import (A130).
+					eprint("Skipping " + email + ": its login carries no tokens (Claude Code cleared them); sign in to that account again and export it anew")
+					skipped++
+					continue
 				}
 			}
 

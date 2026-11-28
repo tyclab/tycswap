@@ -109,6 +109,13 @@ func Export(acc Accounts, destination, account string, full bool) error {
 			if err != nil || credsText == "" {
 				return cerr.CredentialRead("failed to read live credentials for active account %s", email)
 			}
+			if oauth.TokensWiped(credsText) {
+				// Claude Code cleared the live login: the stored one goes out (A130).
+				eprint("Account-" + num + " (" + email + "): the live login carries no tokens (Claude Code cleared them); exporting its stored login")
+				isActive = false
+			}
+		}
+		if isActive {
 			var found bool
 			configText, found, err = acc.ReadActiveConfig()
 			if err != nil {
