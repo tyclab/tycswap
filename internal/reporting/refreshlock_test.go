@@ -26,10 +26,10 @@ func TestInactiveRefreshRechecksUnderTheLock(t *testing.T) {
 		calls := new(int)
 		oc := &oauth.FakeClient{RefreshFn: func(ctx context.Context, _ string) oauth.RefreshOutcome {
 			*calls++
-			// The refresh runs under the store lock: until its request is
-			// written it is bounded below the lock's own timeout (DESIGN A129).
-			if oauth.DefaultRefreshSendTimeout >= filelock.DefaultTimeout {
-				t.Errorf("refresh send bound %v is not below the lock timeout %v", oauth.DefaultRefreshSendTimeout, filelock.DefaultTimeout)
+			// The client bounds the refresh; the usage fetch puts no deadline
+			// of its own on it (DESIGN A129).
+			if at, ok := ctx.Deadline(); ok && time.Until(at) < oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+				t.Errorf("the fetch ends the refresh %s from now, before the client's own bounds", time.Until(at).Round(time.Millisecond))
 			}
 			return oauth.RefreshOutcome{Credentials: rotated}
 		}}
@@ -51,6 +51,13 @@ func TestInactiveRefreshRechecksUnderTheLock(t *testing.T) {
 		out := inactiveRefresh(s, "2", "b@example.com")(context.Background(), held)
 		if *calls != 1 || out.Credentials != rotated || backup(s) != rotated {
 			t.Fatalf("calls=%d out=%q backup=%q", *calls, out.Credentials, backup(s))
+		}
+	})
+	t.Run("the usage fetch refreshes an expired inactive login", func(t *testing.T) {
+		s, calls := setup(t, 1)
+		fetchAccountUsage(s, AccountInfo{Number: 2, Email: "b@example.com", Creds: held})
+		if *calls != 1 || backup(s) != rotated {
+			t.Fatalf("calls=%d backup=%q", *calls, backup(s))
 		}
 	})
 	t.Run("a lineage that moved on is used, not refreshed", func(t *testing.T) {

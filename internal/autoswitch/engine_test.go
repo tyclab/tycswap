@@ -5,6 +5,7 @@
 package autoswitch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -923,10 +924,15 @@ func TestFresheningNearExpiryRefreshes(t *testing.T) {
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	rotated := farFutureCreds(clk, "r2-new")
 	called := false
-	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
+	// The client bounds the refresh; the freshen, for tick and start alike,
+	// puts no deadline of its own on it (DESIGN A129).
+	oc := &oauth.FakeClient{RefreshFn: func(ctx context.Context, _ string) oauth.RefreshOutcome {
 		called = true
+		if at, ok := ctx.Deadline(); ok && time.Until(at) < oauth.DefaultRefreshSendTimeout+oauth.DefaultRefreshReplyTimeout {
+			t.Errorf("the freshen ends the refresh %s from now, before the client's own bounds", time.Until(at).Round(time.Millisecond))
+		}
 		return oauth.RefreshOutcome{Credentials: rotated}
-	})
+	}}
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false, WithOAuthClient(oc))
 	if got := e.Tick(); got != Switched {
